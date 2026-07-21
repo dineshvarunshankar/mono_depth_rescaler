@@ -1,0 +1,47 @@
+deployment:
+  profile: openvins
+  profiles:
+    openvins:
+      vio_pipe: ov_extended
+      min_quality: 1
+      tof_max_points: 500
+      projection: world_pose
+    qvio:
+      vio_pipe: qvio_extended
+      min_quality: 1
+      tof_max_points: 500
+      projection: world_pose
+
+inference:
+  mpa_pipe_name: tflite_disparity
+  input_resolution: [256, 256]
+  preprocess: undistort
+  fov: crop
+  antialias: false
+
+rescale:
+  method: monotonic_nonsmoothing_spline
+  num_knots_spline: 10
+  spline_kappa: 1.0e+6
+  min_anchors: 13
+  outlier_rejection: true
+  outlier_k: 3.0
+  subpixel_2x2: true
+  anchor_depth_min: 0.05
+  anchor_depth_max: 65.0
+  depth_min: 0.3
+  depth_max: 50.0
+  max_hold_age_ns: 5000000000
+
+anchors:
+  use_tof: true
+  tof_pipe: tof
+  tof_confidence_min: 128
+  tof_tolerance_ms: 200
+  balance_mode: "off"
+  balance_vio_fraction: 0.5
+  balance_vio_sufficient: 10
+  balance_tof_fallback: 64
+
+output:
+  pipe: metric_depth

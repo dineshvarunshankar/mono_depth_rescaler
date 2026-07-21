@@ -1,0 +1,64 @@
+#pragma once
+#include <stdint.h>
+
+// Mirror of the VOXL SDK's vio_data_t.h (libmodal-pipe, pipe_interfaces/),
+// transcribed field-for-field from the SDK source and cross-checked against the
+// verified Python decoder in proto/vio/ext_vio.py.
+// Sizes: vio_data_t=324, vio_feature_t=76, ext_vio_data_t=5268.
+//
+// If the SDK headers are available at build time, prefer including
+// <modal_pipe_interfaces.h> and deleting this file.
+
+#define VIO_MAX_FEATURES 64
+
+typedef enum vio_point_quality_t {
+    VIO_POINT_LOW = 0,
+    VIO_POINT_MEDIUM,   // not "in state" (MSCKF)
+    VIO_POINT_HIGH      // "in state" (SLAM)
+} vio_point_quality_t;
+
+typedef struct __attribute__((packed)) vio_data_t {
+    uint32_t magic_number;
+    int32_t  quality;                  // >0 in normal use, larger is better
+    int64_t  timestamp_ns;             // clock_monotonic time of this pose
+    float    T_imu_wrt_vio[3];
+    float    R_imu_to_vio[3][3];
+    float    pose_covariance[21];      // 6x6 upper triangle, row-major
+    float    vel_imu_wrt_vio[3];
+    float    velocity_covariance[21];  // 6x6 upper triangle, row-major
+    float    imu_angular_vel[3];       // body frame, biases applied
+    float    gravity_vector[3];        // in VIO frame
+    float    T_cam_wrt_imu[3];         // tracking camera extrinsics as VIO uses them
+    float    R_cam_to_imu[3][3];
+    uint32_t error_code;
+    uint16_t n_feature_points;
+    uint8_t  state;                    // FAILED / INITIALIZING / OK
+    uint8_t  frame;
+} vio_data_t;  // 324 bytes
+
+typedef struct __attribute__((packed)) vio_feature_t {
+    uint32_t id;
+    int32_t  cam_id;
+    float    pix_loc[2];               // raw distorted pixel in the tracking camera
+    float    tsf[3];                   // 3D position in VIO world frame
+    float    p_tsf[3][3];              // position covariance
+    float    depth;                    // from the observing (tracking) camera
+    float    depth_error_stddev;
+    int32_t  point_quality;            // vio_point_quality_t
+} vio_feature_t;  // 76 bytes
+
+typedef struct __attribute__((packed)) ext_vio_data_t {
+    vio_data_t    v;
+    int32_t       last_cam_frame_id;
+    int64_t       last_cam_timestamp_ns;
+    float         imu_cam_time_shift_s;
+    float         gravity_covariance[3][3];
+    float         gyro_bias[3];
+    float         accl_bias[3];
+    uint32_t      n_total_features;
+    vio_feature_t features[VIO_MAX_FEATURES];
+} ext_vio_data_t;  // 324 + 4 + 8 + 4 + 36 + 12 + 12 + 4 + 64*76 = 5268 bytes
+
+static_assert(sizeof(vio_data_t)     == 324,  "vio_data_t size mismatch");
+static_assert(sizeof(vio_feature_t)  == 76,   "vio_feature_t size mismatch");
+static_assert(sizeof(ext_vio_data_t) == 5268, "ext_vio_data_t size mismatch");

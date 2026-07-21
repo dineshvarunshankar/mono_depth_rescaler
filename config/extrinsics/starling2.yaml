@@ -1,0 +1,57 @@
+# Starling 2 (D0014) sensor extrinsics
+# Source: voxl-inspect-extrinsics --all
+# All transforms: child w.r.t. imu_apps (parent), except where noted.
+# Convention: P_imu = R_child_to_parent @ P_child + T_child_wrt_parent
+#             This matches vio_data_t's R_cam_to_imu / T_cam_wrt_imu fields.
+
+## Hires camera frame convention:
+# --------------------------------
+# IMU_x = cam_z
+# IMU_y = cam_x
+# IMU_z = cam_y
+## The camera uses the OpenCV convention (X=right, Y=down, Z=forward)
+# --------------------------------
+# IMU_x = forward
+# IMU_y = right
+# IMU_z = down
+
+
+hires:
+  T_child_wrt_parent: [0.039, 0.000, 0.019]
+  R_child_to_parent:
+    - [0, -0, 1]
+    - [1, 0, -0]
+    - [-0, 1, 0]
+
+# ToF sensor. Source: extrinsics.conf RPY [0, 90, 180] deg, T [0.066, 0.009, -0.012].
+# R below = Rotation.from_euler('zyx', [0, 90, 180], degrees=True), the same
+# convention that reproduces the hires block from its RPY [0, 90, 90].
+tof:
+  T_child_wrt_parent: [0.066, 0.009, -0.012]
+  R_child_to_parent:
+    - [0,  0,  1]
+    - [0, -1,  0]
+    - [1,  0,  0]
+
+tracking_front:
+  T_child_wrt_parent: [0.037, 0.000, 0.001]
+  R_child_to_parent:
+    - [0, -0, 1]
+    - [1, 0, -0]
+    - [-0, 1, 0]
+
+tracking_down:
+  T_child_wrt_parent: [-0.088, -0.004, 0.027]
+  R_child_to_parent:
+    - [-1, -0, 0] # 180 deg roll
+    - [ 0, -1, -0] #180 deg roll
+    - [ 0,  0, 1]
+
+# body -> imu_apps (reference; VIO outputs are in IMU frame)
+imu_apps:
+  parent: body
+  T_child_wrt_parent: [0.029, -0.006, -0.016]
+  R_child_to_parent:
+    - [1, -0, 0]
+    - [0, 1, -0]
+    - [0, 0, 1]

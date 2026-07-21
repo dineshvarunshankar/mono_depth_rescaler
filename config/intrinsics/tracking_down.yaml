@@ -1,0 +1,10 @@
+# tracking_down (AR0144, fisheye / Kannala-Brandt) on D0014.
+# Source: this log's data/modalai/opencv_tracking_down_intrinsics.yml (calib 2023-03-02, reproj 0.17 px).
+width: 1280
+height: 800
+fx: 450.22679606182686
+fy: 449.93747970023276
+cx: 661.0682743914609
+cy: 396.56266273277873
+distortion_model: fisheye
+distortion: [0.06667359032410987, 0.019171621154085678, -0.018572582085471478, 0.006373347459857626]   # k1 k2 k3 k4

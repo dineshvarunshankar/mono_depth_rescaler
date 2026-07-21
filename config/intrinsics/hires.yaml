@@ -1,0 +1,14 @@
+# IMX412 "hires" camera
+# Source: voxl-calibrate-camera hires_small_color -s 6x8 -l 0.027, on D0014,
+#         2026-07-16. RMS reprojection error 0.436 px.
+# Measured FOV ~82 deg horizontal / ~66 deg vertical: this lens is NOT an
+# ultra-wide fisheye; the fisheye (Kannala-Brandt) solver is ill-conditioned on
+# it, and Brown-Conrady (plumb_bob) fits well.
+width: 1024
+height: 768
+fx: 593.0477573442388
+fy: 591.7125974187695
+cx: 500.2332128799812
+cy: 388.6282597746387
+distortion_model: pinhole
+distortion: [0.1388803712085015, -0.2150293276153785, 0.0007812717807851107, 0.002201948904745487, 0.1215502080770114]   # k1 k2 p1 p2 k3 (plumb_bob)

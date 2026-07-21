@@ -1,0 +1,97 @@
+# mono_depth_rescaler
+
+Converts relative monocular disparity to metric depth using VIO landmarks and
+ToF points, on VOXL 2 (Starling 2). The Python implementation in `proto/` is the
+reference; `src/` is the C++ deploy build. Both use `config/pipeline.yaml`.
+
+The rescaler consumes three MPA pipes — relative disparity (from
+`voxl-tflite-server`), VIO (`qvio_extended` or `ov_extended`), and ToF (`tof`) —
+and publishes metric depth on `metric_depth`. It runs no model itself.
+
+## Requirements
+
+- VOXL 2 (QRB5165), e.g. Starling 2, with the ModalAI SDK image
+- The `voxl-cross` build container (see [step 1](#1-cross-compile))
+- Running on the drone: `voxl-tflite-server` (disparity), a VIO server
+  (`voxl-qvio-server` or `voxl-open-vins-server`), and `voxl-camera-server` with ToF enabled
+
+## Deploy on VOXL 2
+
+### 1. Cross-compile
+
+`voxl-docker` is the host wrapper that launches the `voxl-cross` image (cross
+compiler + VOXL SDK). Install both per ModalAI's
+[voxl-docker guide](https://gitlab.com/voxl-public/voxl-docker), then:
+
+```bash
+voxl-docker -i voxl-cross          # enter the build container
+./build.sh qrb5165                 # ./build.sh native for a dev-machine build + tests
+```
+
+### 2. Install on the drone
+
+```bash
+adb push build/mono_depth_rescaler /usr/bin/
+adb push config/ /etc/mono_depth_rescaler/      # pipeline.yaml, intrinsics/, extrinsics/
+```
+
+### 3. Configure the disparity producer
+
+Run `voxl-tflite-server` with MiDaS publishing FLOAT32 disparity; the
+[AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) repo carries the
+disparity patch and model helpers. In `/etc/modalai/voxl-tflite-server.conf`:
+
+```
+model_architecture: MIDAS_V2
+delegate:           gpu
+allow_multiple:     false
+```
+
+and `publish_disparity: 1` in `/etc/voxl-tflite-server/undistort.yml`. With
+`allow_multiple: false` the pipe is `tflite_disparity` (the rescaler default). Its
+`fov` must match `inference.fov`, and the model resolution must match
+`inference.input_resolution` (e.g. MiDaS 256).
+
+### 4. Run
+
+```bash
+mono_depth_rescaler --profile qvio --fov crop      # qVIO (primary)
+mono_depth_rescaler --profile openvins --fov crop  # OpenVINS
+```
+
+> OpenVINS initialises more reliably but publishes far fewer in-FOV features than
+> qVIO (and no per-feature depth/uncertainty), so it leans harder on ToF. qVIO is
+> the primary target.
+
+### 5. Verify
+
+```bash
+voxl-inspect-services          # metric_depth pipe present and publishing
+```
+
+No output usually means a pipe-name or resolution mismatch: `mpa_pipe_name` must
+equal the producer's pipe (`tflite_disparity`, or `MIDAS_tflite_disparity` under
+`allow_multiple`), and `input_resolution` must equal the model's output size.
+
+## Selected configuration
+
+- qVIO profile: `qvio_extended`, ToF cap 500
+- OpenVINS profile: `ov_extended`, ToF cap 500
+- Undistort with `crop` by default; `stretch` retains full FOV
+- Monotonic non-smoothing spline, 10 knots, uniform anchor weights
+- MAD outlier rejection (k=3.0); five-second calibration hold
+
+`config/pipeline.yaml` is shared by Python and C++.
+
+## Tests
+
+```bash
+uv sync
+uv run pytest -q
+cmake -S . -B build -DBUILD_VOXL_APP=OFF
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+The local build tests the platform-independent C++ core. The VOXL executable is
+built automatically when the ModalAI SDK provides `modal_pipe`.

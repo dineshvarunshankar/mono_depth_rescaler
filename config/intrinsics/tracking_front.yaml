@@ -1,0 +1,10 @@
+# tracking_front (AR0144, fisheye / Kannala-Brandt) on D0014.
+# Source: this log's data/modalai/opencv_tracking_front_intrinsics.yml (calib 2023-03-02, reproj 0.17 px).
+width: 1280
+height: 800
+fx: 454.5146338717634
+fy: 454.28080543445964
+cx: 597.4247427608232
+cy: 411.87713242099863
+distortion_model: fisheye
+distortion: [0.06162342136440395, 0.010113359718148352, -0.011584940344663983, 0.005229945475233392]   # k1 k2 k3 k4

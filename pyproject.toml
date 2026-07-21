@@ -1,0 +1,23 @@
+[project]
+name = "mono-depth-rescaler"
+version = "0.1.0"
+description = "Metric depth from relative disparity using VIO landmarks and ToF (VOXL2 / Starling 2)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "opencv-python>=4.8",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.optional-dependencies]
+torch = ["torch>=2.0", "torchvision>=0.15"]   # torch-hub MiDaS (offline eval)
+tflite = ["ai-edge-litert>=1.0"]              # tflite parity runs
+
+[tool.uv]
+package = false
