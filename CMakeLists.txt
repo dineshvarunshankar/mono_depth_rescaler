@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.16)
 project(mono_depth_rescaler CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -6,12 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d)
 
-find_library(YAMLCPP_LIB NAMES yaml-cpp REQUIRED)
-find_path(YAMLCPP_INC NAMES yaml-cpp/yaml.h REQUIRED)
-add_library(yaml-cpp INTERFACE IMPORTED)
-set_target_properties(yaml-cpp PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${YAMLCPP_INC}"
-    INTERFACE_LINK_LIBRARIES "${YAMLCPP_LIB}")
+include(FetchContent)
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(yaml-cpp
+    GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+    GIT_TAG        0.8.0
+    GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(yaml-cpp)
 
 add_library(rescaler_core
     src/core/config.cpp
@@ -24,9 +26,7 @@ add_library(rescaler_core
     src/tof/tof_types.cpp
     src/vio/pose_buffer.cpp)
 target_include_directories(rescaler_core PUBLIC src ${OpenCV_INCLUDE_DIRS})
-target_link_libraries(rescaler_core PUBLIC
-    ${OpenCV_LIBS}
-    yaml-cpp)
+target_link_libraries(rescaler_core PUBLIC ${OpenCV_LIBS} yaml-cpp)
 target_compile_options(rescaler_core PRIVATE -Wall -Wextra -Wpedantic)
 
 option(BUILD_VOXL_APP "Build the ModalAI MPA executable" ON)

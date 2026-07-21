@@ -1,5 +1,4 @@
 # tracking_down (AR0144, fisheye / Kannala-Brandt) on D0014.
-# proto tracking_extrinsic (Method 2) only.
 # Source: this log's data/modalai/opencv_tracking_down_intrinsics.yml (calib 2023-03-02, reproj 0.17 px).
 width: 1280
 height: 800
