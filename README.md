@@ -37,9 +37,11 @@ adb push config/ /etc/mono_depth_rescaler/      # pipeline.yaml, intrinsics/, ex
 
 ### 3. Configure the disparity producer
 
-Run `voxl-tflite-server` with MiDaS publishing FLOAT32 disparity; the
-[AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) repo carries the
-disparity patch and model helpers. In `/etc/modalai/voxl-tflite-server.conf`:
+Run `voxl-tflite-server` with a depth model publishing FLOAT32 disparity — the
+rescaler works with any (MiDaS, ZipDepth, …), it only reads the disparity pipe.
+[AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) provides the
+depth-model helpers and disparity output that `voxl-tflite-server` uses. In
+`/etc/modalai/voxl-tflite-server.conf` (MiDaS shown):
 
 ```
 model_architecture: MIDAS_V2
@@ -49,8 +51,8 @@ allow_multiple:     false
 
 and `publish_disparity: 1` in `/etc/voxl-tflite-server/undistort.yml`. With
 `allow_multiple: false` the pipe is `tflite_disparity` (the rescaler default). Its
-`fov` must match `inference.fov`, and the model resolution must match
-`inference.input_resolution` (e.g. MiDaS 256).
+`fov` must match `inference.fov`, and `inference.input_resolution` must match the
+model's output (e.g. 256 for MiDaS, 384 for ZipDepth).
 
 ### 4. Run
 

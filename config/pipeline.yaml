@@ -36,12 +36,13 @@ rescale:
 anchors:
   use_tof: true
   tof_pipe: tof
-  tof_confidence_min: 128
+  tof_confidence_min: 128   # conf is binary (0/255)
   tof_tolerance_ms: 200
-  balance_mode: "off"
-  balance_vio_fraction: 0.5
-  balance_vio_sufficient: 10
-  balance_tof_fallback: 64
+  # balancing: proto only; the C++ deploy unions VIO+ToF (balance_mode off)
+  balance_mode: "off"       # off | adaptive_source | adaptive_count
+  balance_vio_fraction: 0.5 # adaptive_source only
+  balance_vio_sufficient: 10 # adaptive modes only
+  balance_tof_fallback: 64 # adaptive_count only
 
 output:
   pipe: metric_depth

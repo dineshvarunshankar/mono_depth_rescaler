@@ -1,11 +1,17 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 project(mono_depth_rescaler CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d)
-find_package(yaml-cpp REQUIRED)
+
+find_library(YAMLCPP_LIB NAMES yaml-cpp REQUIRED)
+find_path(YAMLCPP_INC NAMES yaml-cpp/yaml.h REQUIRED)
+add_library(yaml-cpp INTERFACE IMPORTED)
+set_target_properties(yaml-cpp PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${YAMLCPP_INC}"
+    INTERFACE_LINK_LIBRARIES "${YAMLCPP_LIB}")
 
 add_library(rescaler_core
     src/core/config.cpp
