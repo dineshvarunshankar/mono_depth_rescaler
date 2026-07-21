@@ -3,10 +3,11 @@
 #include <modal_pipe.h>
 
 #include <cmath>
+#include <cstdint>
 #include <utility>
-#include <vector>
 
-TofSource::TofSource(std::string pipe) : _pipe(std::move(pipe)) {}
+TofSource::TofSource(std::string pipe, int ch)
+    : _pipe(std::move(pipe)), _ch(ch) {}
 
 TofSource::~TofSource() {
     stop();
@@ -16,18 +17,23 @@ void TofSource::start() {
     if (_running.exchange(true)) {
         return;
     }
-    _thread = std::thread(&TofSource::run, this);
+    pipe_client_set_simple_helper_cb(_ch, &TofSource::helper_cb, this);
+    const int rc = pipe_client_open(
+        _ch,
+        _pipe.c_str(),
+        "mono_depth_rescaler",
+        CLIENT_FLAG_EN_SIMPLE_HELPER,
+        static_cast<int>(TOF_PACKET_BYTES) * 4);
+    if (rc < 0) {
+        _running = false;
+    }
 }
 
 void TofSource::stop() {
-    _running = false;
-    if (_fd >= 0) {
-        pipe_client_close(_fd);
-        _fd = -1;
+    if (!_running.exchange(false)) {
+        return;
     }
-    if (_thread.joinable()) {
-        _thread.join();
-    }
+    pipe_client_close(_ch);
 }
 
 std::shared_ptr<const TofFrame> TofSource::nearest(
@@ -40,23 +46,17 @@ std::shared_ptr<const TofFrame> TofSource::nearest(
     return _latest;
 }
 
-void TofSource::run() {
-    _fd = pipe_client_open(_pipe.c_str(), PIPE_CLIENT_FLAGS_EN_SIMPLE_HELPER, 0);
-    if (_fd < 0) {
-        _running = false;
+void TofSource::helper_cb(int /*ch*/, char* data, int bytes, void* context) {
+    static_cast<TofSource*>(context)->on_data(data, bytes);
+}
+
+void TofSource::on_data(char* data, int bytes) {
+    if (!_running || bytes != static_cast<int>(TOF_PACKET_BYTES)) {
         return;
     }
-
-    std::vector<uint8_t> packet(TOF_PACKET_BYTES);
-    while (_running) {
-        const int n = pipe_client_read(
-            _fd, packet.data(), static_cast<int>(packet.size()));
-        if (n != static_cast<int>(packet.size())) {
-            continue;
-        }
-        auto frame = std::make_shared<TofFrame>(
-            decode_tof_packet(packet.data(), packet.size()));
-        std::lock_guard<std::mutex> lock(_mutex);
-        _latest = std::move(frame);
-    }
+    auto frame = std::make_shared<TofFrame>(decode_tof_packet(
+        reinterpret_cast<const uint8_t*>(data),
+        static_cast<size_t>(bytes)));
+    std::lock_guard<std::mutex> lock(_mutex);
+    _latest = std::move(frame);
 }

@@ -3,7 +3,6 @@
 #include <string>
 #include <atomic>
 #include <mutex>
-#include <thread>
 #include <vector>
 #include <deque>
 #include <functional>
@@ -23,7 +22,8 @@ public:
 
     using FrameCallback = std::function<void(const Frame&)>;
 
-    MpaBackend(std::string pipe, int model_w, int model_h, int ring_size = 8);
+    MpaBackend(std::string pipe, int model_w, int model_h,
+               int ring_size = 8, int ch = 2);
     ~MpaBackend();
 
     void set_frame_callback(FrameCallback cb);
@@ -31,13 +31,13 @@ public:
     void stop();
 
 private:
-    void _run();
+    static void helper_cb(int ch, char* data, int bytes, void* context);
+    void on_data(char* data, int bytes);
+
     std::string        _pipe;
-    int                _mw, _mh, _ring;
+    int                _mw, _mh, _ring, _ch;
     std::atomic<bool>  _running{false};
-    std::thread        _thread;
     mutable std::mutex _mtx;
     std::deque<Frame>  _buf;
     FrameCallback      _callback;
-    int                _fd{-1};
 };

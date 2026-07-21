@@ -11,9 +11,9 @@
 #include <signal.h>
 
 #include <atomic>
-#include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -23,6 +23,11 @@ static std::atomic<bool> g_running{true};
 static void on_signal(int) { g_running = false; }
 
 static constexpr int64_t FEATURE_TOL_NS = 200'000'000;
+
+static constexpr int CH_VIO = 0;
+static constexpr int CH_TOF = 1;
+static constexpr int CH_DEPTH = 2;
+static constexpr int CH_OUT = 0;
 
 struct Arguments {
     std::string config{"/etc/mono_depth_rescaler/pipeline.yaml"};
@@ -57,14 +62,29 @@ Arguments parse_arguments(int argc, char** argv) {
     return args;
 }
 
+static void fill_output_pipe_info(pipe_info_t* info, const std::string& name) {
+    std::memset(info, 0, sizeof(*info));
+    std::snprintf(info->name, sizeof(info->name), "%s", name.c_str());
+    std::snprintf(
+        info->location, sizeof(info->location), "%s%s/",
+        MODAL_PIPE_DEFAULT_BASE_DIR, name.c_str());
+    std::snprintf(
+        info->type, sizeof(info->type), "camera_image_metadata_t");
+    std::snprintf(
+        info->server_name, sizeof(info->server_name), "mono_depth_rescaler");
+    info->size_bytes = 16 * 1024 * 1024;
+    info->server_pid = 0;
+}
+
 int run(const Arguments& args) {
     Config cfg = Config::from_yaml(
         args.config, args.intrinsics, args.extrinsics, args.profile, args.fov);
     Pipeline pipeline(cfg);
     PoseBuffer pose_buf;
 
-    int out_fd = pipe_server_create(cfg.output.pipe.c_str(), 0, 0);
-    if (out_fd < 0) {
+    pipe_info_t out_info;
+    fill_output_pipe_info(&out_info, cfg.output.pipe);
+    if (pipe_server_create(CH_OUT, out_info, 0)) {
         throw std::runtime_error("failed to create output pipe");
     }
 
@@ -72,10 +92,11 @@ int run(const Arguments& args) {
         pose_buf.push(pkt);
     };
 
-    TofSource tof_source(cfg.anchors.tof_pipe);
+    TofSource tof_source(cfg.anchors.tof_pipe, CH_TOF);
     MpaBackend depth_source(
         cfg.inference.mpa_pipe_name,
-        cfg.inference.input_w, cfg.inference.input_h);
+        cfg.inference.input_w, cfg.inference.input_h,
+        /*ring_size=*/8, CH_DEPTH);
 
     depth_source.set_frame_callback([&](const MpaBackend::Frame& frame) {
         const int64_t image_time = frame.mid_timestamp_ns();
@@ -111,10 +132,12 @@ int run(const Arguments& args) {
             frame.metadata, result->depth,
             cfg.inference.input_w, cfg.inference.input_h);
         pipe_server_write(
-            out_fd, packet.data(), static_cast<int>(packet.size()));
+            CH_OUT,
+            const_cast<char*>(reinterpret_cast<const char*>(packet.data())),
+            static_cast<int>(packet.size()));
     });
 
-    MpaVioSource vio(cfg.vio.pipe);
+    MpaVioSource vio(cfg.vio.pipe, CH_VIO);
 
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
@@ -135,7 +158,7 @@ int run(const Arguments& args) {
     depth_source.stop();
     tof_source.stop();
     vio.stop();
-    pipe_server_close(out_fd);
+    pipe_server_close(CH_OUT);
     return 0;
 }
 
