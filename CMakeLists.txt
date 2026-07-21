@@ -31,9 +31,10 @@ target_compile_options(rescaler_core PRIVATE -Wall -Wextra -Wpedantic)
 
 option(BUILD_VOXL_APP "Build the ModalAI MPA executable" ON)
 if(BUILD_VOXL_APP)
-    find_library(MODAL_PIPE_LIB modal_pipe PATHS /usr/lib /usr/local/lib)
+    find_library(MODAL_PIPE_LIB modal_pipe PATHS /usr/lib /usr/local/lib /usr/lib64)
+    find_library(MODAL_JSON_LIB modal_json PATHS /usr/lib /usr/local/lib /usr/lib64)
     find_path(MODAL_PIPE_INC modal_pipe.h PATHS /usr/include /usr/local/include)
-    if(MODAL_PIPE_LIB AND MODAL_PIPE_INC)
+    if(MODAL_PIPE_LIB AND MODAL_JSON_LIB AND MODAL_PIPE_INC)
         add_executable(mono_depth_rescaler
             src/main.cpp
             src/vio/mpa_vio_source.cpp
@@ -42,7 +43,10 @@ if(BUILD_VOXL_APP)
         target_include_directories(
             mono_depth_rescaler PRIVATE ${MODAL_PIPE_INC})
         target_link_libraries(
-            mono_depth_rescaler PRIVATE rescaler_core ${MODAL_PIPE_LIB})
+            mono_depth_rescaler PRIVATE
+            rescaler_core
+            ${MODAL_PIPE_LIB}
+            ${MODAL_JSON_LIB})
         target_compile_options(
             mono_depth_rescaler PRIVATE -Wall -Wextra -Wpedantic)
         install(TARGETS mono_depth_rescaler DESTINATION /usr/bin)
