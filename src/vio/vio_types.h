@@ -1,6 +1,7 @@
 #pragma once
 
 #if __has_include(<pipe_interfaces/vio_data_t.h>)
+#include <cstddef>
 #include <pipe_interfaces/vio_data_t.h>
 
 #ifndef VIO_MAX_FEATURES

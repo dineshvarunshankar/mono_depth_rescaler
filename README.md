@@ -24,8 +24,9 @@ compiler + VOXL SDK). Install both per ModalAI's
 [voxl-docker guide](https://gitlab.com/voxl-public/voxl-docker), then:
 
 ```bash
-voxl-docker -i voxl-cross          # enter the build container
-./build.sh qrb5165                 # ./build.sh native for a dev-machine build + tests
+voxl-docker -i voxl-cross                    # enter the build container
+./install_build_deps.sh qrb5165 dev          # or qrb5165-2 for 2.x images
+./build.sh qrb5165                           # ./build.sh native for host build + tests
 ```
 
 ### 2. Install on the drone
