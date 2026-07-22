@@ -46,10 +46,13 @@ if(BUILD_VOXL_APP)
             mono_depth_rescaler PRIVATE
             rescaler_core
             ${MODAL_PIPE_LIB}
-            ${MODAL_JSON_LIB})
+            ${MODAL_JSON_LIB}
+            pthread)
         target_compile_options(
             mono_depth_rescaler PRIVATE -Wall -Wextra -Wpedantic)
         install(TARGETS mono_depth_rescaler DESTINATION /usr/bin)
+        install(FILES services/mono_depth_rescaler.service
+                DESTINATION /etc/systemd/system)
     else()
         message(STATUS "ModalAI SDK not found; skipping VOXL executable")
     endif()

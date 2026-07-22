@@ -3,13 +3,13 @@
 #include <string>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
+#include <thread>
 #include <vector>
 #include <deque>
 #include <functional>
 #include <cstdint>
 
-// Relative disparity (float32) from voxl-tflite-server's DISPARITY_CH pipe.
-// NOT the <prefix>_tflite pipe -- that is a lossy JET colour map.
 class MpaBackend {
 public:
     struct Frame {
@@ -33,11 +33,14 @@ public:
 private:
     static void helper_cb(int ch, char* data, int bytes, void* context);
     void on_data(char* data, int bytes);
+    void worker_loop();
 
     std::string        _pipe;
     int                _mw, _mh, _ring, _ch;
     std::atomic<bool>  _running{false};
     mutable std::mutex _mtx;
+    std::condition_variable _cv;
     std::deque<Frame>  _buf;
     FrameCallback      _callback;
+    std::thread        _worker;
 };

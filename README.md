@@ -58,23 +58,25 @@ model's output (e.g. 256 for MiDaS, 384 for ZipDepth).
 ### 4. Run
 
 ```bash
-mono_depth_rescaler --profile qvio --fov crop      # qVIO (primary)
-mono_depth_rescaler --profile openvins --fov crop  # OpenVINS
+mono_depth_rescaler --profile qvio --fov crop
+mono_depth_rescaler --profile openvins --fov crop
 ```
 
-> OpenVINS initialises more reliably but publishes far fewer in-FOV features than
-> qVIO (and no per-feature depth/uncertainty), so it leans harder on ToF. qVIO is
-> the primary target.
+Service (unit defaults to qvio + crop):
+
+```bash
+adb push services/mono_depth_rescaler.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now mono_depth_rescaler
+```
 
 ### 5. Verify
 
 ```bash
-voxl-inspect-services          # metric_depth pipe present and publishing
+voxl-inspect-cam tflite_disparity
+voxl-inspect-cam metric_depth
+systemctl is-active mono_depth_rescaler
 ```
-
-No output usually means a pipe-name or resolution mismatch: `mpa_pipe_name` must
-equal the producer's pipe (`tflite_disparity`, or `MIDAS_tflite_disparity` under
-`allow_multiple`), and `input_resolution` must equal the model's output size.
 
 ## Selected configuration
 

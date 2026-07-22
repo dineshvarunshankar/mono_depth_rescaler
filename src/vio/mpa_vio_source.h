@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <string>
+#include <vector>
 
 class MpaVioSource : public VioSource {
 public:
@@ -21,4 +22,5 @@ private:
     int _ch;
     Callback _callback;
     std::atomic<bool> _running{false};
+    std::vector<char> _remnant;
 };

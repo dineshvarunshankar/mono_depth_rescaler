@@ -18,7 +18,11 @@ void MpaBackend::stop() {
     if (!_running.exchange(false)) {
         return;
     }
+    _cv.notify_all();
     pipe_client_close(_ch);
+    if (_worker.joinable()) {
+        _worker.join();
+    }
 }
 
 void MpaBackend::set_frame_callback(FrameCallback cb) {
@@ -34,6 +38,7 @@ void MpaBackend::start() {
     const int frame_bytes =
         static_cast<int>(sizeof(ImageMetadata)) +
         npix * static_cast<int>(sizeof(float));
+    _worker = std::thread(&MpaBackend::worker_loop, this);
     pipe_client_set_simple_helper_cb(_ch, &MpaBackend::helper_cb, this);
     const int rc = pipe_client_open(
         _ch,
@@ -43,6 +48,10 @@ void MpaBackend::start() {
         frame_bytes);
     if (rc < 0) {
         _running = false;
+        _cv.notify_all();
+        if (_worker.joinable()) {
+            _worker.join();
+        }
     }
 }
 
@@ -70,22 +79,41 @@ void MpaBackend::on_data(char* data, int bytes) {
         return;
     }
 
-    const float* px = reinterpret_cast<const float*>(data + hdr_sz);
-
     Frame f;
     f.metadata = meta;
-    f.disparity.assign(px, px + npix);
+    f.disparity.assign(
+        reinterpret_cast<const float*>(data + hdr_sz),
+        reinterpret_cast<const float*>(data + hdr_sz) + npix);
 
-    FrameCallback cb;
     {
         std::lock_guard<std::mutex> lk(_mtx);
-        _buf.push_back(f);
+        _buf.push_back(std::move(f));
         while (static_cast<int>(_buf.size()) > _ring) {
             _buf.pop_front();
         }
-        cb = _callback;
     }
-    if (cb) {
-        cb(f);
+    _cv.notify_one();
+}
+
+void MpaBackend::worker_loop() {
+    while (true) {
+        Frame frame;
+        FrameCallback cb;
+        {
+            std::unique_lock<std::mutex> lk(_mtx);
+            _cv.wait(lk, [&] { return !_buf.empty() || !_running; });
+            if (_buf.empty()) {
+                if (!_running) {
+                    return;
+                }
+                continue;
+            }
+            frame = std::move(_buf.back());
+            _buf.clear();
+            cb = _callback;
+        }
+        if (cb) {
+            cb(frame);
+        }
     }
 }
