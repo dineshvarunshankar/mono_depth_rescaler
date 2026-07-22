@@ -1,0 +1,15 @@
+[Unit]
+Description=mono_depth_rescaler
+SourcePath=/usr/bin/mono_depth_rescaler
+After=voxl-wait-for-fs.service voxl-tflite-server.service voxl-qvio-server.service
+Requires=voxl-wait-for-fs.service
+
+[Service]
+User=root
+Type=simple
+Restart=on-failure
+RestartSec=3s
+ExecStart=/usr/bin/mono_depth_rescaler --profile qvio --fov crop
+
+[Install]
+WantedBy=multi-user.target
