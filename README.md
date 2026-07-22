@@ -33,8 +33,34 @@ voxl-docker -i voxl-cross                    # enter the build container
 
 ```bash
 adb push build/mono_depth_rescaler /usr/bin/
-adb push config/ /etc/mono_depth_rescaler/      # pipeline.yaml, intrinsics/, extrinsics/
+adb push config/ /etc/mono_depth_rescaler/
+adb push services/mono_depth_rescaler.service /etc/systemd/system/
+
+adb shell
+systemctl daemon-reload
+systemctl enable --now mono_depth_rescaler
+systemctl status mono_depth_rescaler
 ```
+
+That starts the **systemd service**. The unit file always launches:
+
+```
+/usr/bin/mono_depth_rescaler --profile qvio --fov crop
+```
+
+so you do not type those flags for normal use. Edit the unit (or use a drop-in)
+only if you want different defaults permanently.
+
+To run the binary yourself once — for a temporary test, or a different profile —
+stop the service first, then:
+
+```bash
+systemctl stop mono_depth_rescaler
+mono_depth_rescaler --profile openvins --fov crop   # example: OpenVINS instead of qVIO
+```
+
+Same program; service = auto-start with qvio/crop; manual = temporary run with
+whatever flags you pass.
 
 ### 3. Configure the disparity producer
 
@@ -55,22 +81,7 @@ and `publish_disparity: 1` in `/etc/voxl-tflite-server/undistort.yml`. With
 `fov` must match `inference.fov`, and `inference.input_resolution` must match the
 model's output (e.g. 256 for MiDaS, 384 for ZipDepth).
 
-### 4. Run
-
-```bash
-mono_depth_rescaler --profile qvio --fov crop
-mono_depth_rescaler --profile openvins --fov crop
-```
-
-Service (unit defaults to qvio + crop):
-
-```bash
-adb push services/mono_depth_rescaler.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now mono_depth_rescaler
-```
-
-### 5. Verify
+### 4. Verify
 
 ```bash
 voxl-inspect-cam tflite_disparity
