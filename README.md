@@ -77,20 +77,22 @@ mono_depth_rescaler --profile openvins --fov crop
 
 Run `voxl-tflite-server` with a depth model publishing FLOAT32 disparity — the
 rescaler works with any (MiDaS, ZipDepth, …), it only reads the disparity pipe.
-[AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) provides the
-depth-model helpers and disparity output that `voxl-tflite-server` uses. In
-`/etc/modalai/voxl-tflite-server.conf` (MiDaS shown):
+[AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) §4.4 has the full patch
+guide. Starling 2 MiDaS example:
+
+`/etc/modalai/voxl-tflite-server.conf`:
 
 ```
 model_architecture: MIDAS_V2
 delegate:           gpu
 allow_multiple:     false
+skip_frames:        0
+input_pipe:         /run/mpa/hires_small_color/
 ```
 
-and `publish_disparity: 1` in `/etc/voxl-tflite-server/undistort.yml`. With
-`allow_multiple: false` the pipe is `tflite_disparity` (the rescaler default). Its
-`fov` must match `inference.fov`, and `inference.input_resolution` must match the
-model's output (e.g. 256 for MiDaS, 384 for ZipDepth).
+`/etc/voxl-tflite-server/undistort.yml`: `publish_image: 0`, `publish_disparity: 1`,
+`fov: crop`. Then `allow_multiple: false` → pipe `tflite_disparity` (rescaler
+default). Match `fov` and `inference.input_resolution` (256 for MiDaS) on both sides.
 
 ### 4. Verify
 
