@@ -20,6 +20,10 @@ ProjectedAnchors project_features(
     int                   min_quality) {
 
     ProjectedAnchors out;
+    // Applies to both qVIO and OpenVINS (same ext_vio_data_t).
+    if (pkt.v.state != VIO_STATE_OK) {
+        return out;
+    }
     for (uint32_t f = 0; f < pkt.n_total_features && f < VIO_MAX_FEATURES; ++f) {
         const auto& ft = pkt.features[f];
         if (ft.point_quality < min_quality) continue;

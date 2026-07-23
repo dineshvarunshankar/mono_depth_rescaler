@@ -18,6 +18,10 @@ public:
              ext_vio_data_t& pkt_out,
              float T_out[3], float R_out[3][3]) const;
 
+    // Pose only (no feature packet copy). Same sync rules as get().
+    bool get_pose(int64_t t_ns, int64_t feature_tol_ns,
+                  float T_out[3], float R_out[3][3]) const;
+
 private:
     int                        _cap;
     mutable std::mutex         _mtx;

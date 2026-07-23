@@ -60,9 +60,16 @@ Config synthetic_config() {
 
 void test_profiles() {
     const std::string root = PROJECT_SOURCE_DIR;
-    Config openvins = Config::from_yaml(
+    Config defaults = Config::from_yaml(
         root + "/config/pipeline.yaml", root + "/config/intrinsics",
         root + "/config/extrinsics/starling2.yaml");
+    assert(defaults.profile == "qvio");
+    assert(defaults.vio.pipe == "qvio_extended");
+    assert(defaults.anchors.tof_max_points == 500);
+
+    Config openvins = Config::from_yaml(
+        root + "/config/pipeline.yaml", root + "/config/intrinsics",
+        root + "/config/extrinsics/starling2.yaml", "openvins", "crop");
     assert(openvins.profile == "openvins");
     assert(openvins.vio.pipe == "ov_extended");
     assert(openvins.anchors.tof_max_points == 500);
@@ -204,6 +211,7 @@ void test_pipeline_union_and_hold() {
     ext_vio_data_t packet{};
     packet.n_total_features = 5;
     packet.v.timestamp_ns = 1'000'000'000;
+    packet.v.state = VIO_STATE_OK;
     std::vector<float> disparity(100 * 100, 0.2f);
     for (int i = 0; i < 5; ++i) {
         const float depth = 1.0f + i;

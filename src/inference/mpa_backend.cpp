@@ -1,14 +1,16 @@
 #include "mpa_backend.h"
-#include <modal_pipe.h>
+
+#include <cstdio>
 #include <cstring>
 
-MpaBackend::MpaBackend(
-    std::string pipe, int model_w, int model_h, int ring_size, int ch)
-    : _pipe(std::move(pipe)),
-      _mw(model_w),
-      _mh(model_h),
-      _ring(ring_size),
-      _ch(ch) {}
+static_assert(
+    sizeof(ImageMetadata) == sizeof(camera_image_metadata_t),
+    "ImageMetadata must match camera_image_metadata_t");
+
+MpaBackend::MpaBackend(std::string pipe, int model_w, int model_h, int ch)
+    : _pipe(std::move(pipe)), _mw(model_w), _mh(model_h), _ch(ch) {
+    _latest.disparity.resize(static_cast<size_t>(_mw) * _mh);
+}
 
 MpaBackend::~MpaBackend() {
     stop();
@@ -30,67 +32,87 @@ void MpaBackend::set_frame_callback(FrameCallback cb) {
     _callback = std::move(cb);
 }
 
-void MpaBackend::start() {
+void MpaBackend::set_disconnect_callback(DisconnectCallback cb) {
+    std::lock_guard<std::mutex> lk(_mtx);
+    _on_disconnect = std::move(cb);
+}
+
+bool MpaBackend::start() {
     if (_running.exchange(true)) {
-        return;
+        return true;
     }
-    const int npix = _mw * _mh;
-    const int frame_bytes =
-        static_cast<int>(sizeof(ImageMetadata)) +
-        npix * static_cast<int>(sizeof(float));
     _worker = std::thread(&MpaBackend::worker_loop, this);
-    pipe_client_set_simple_helper_cb(_ch, &MpaBackend::helper_cb, this);
+    pipe_client_set_camera_helper_cb(_ch, &MpaBackend::camera_cb, this);
+    pipe_client_set_disconnect_cb(_ch, &MpaBackend::disc_cb, this);
+    // Camera helper allocates its own read buffer; length argument is unused.
     const int rc = pipe_client_open(
         _ch,
         _pipe.c_str(),
         "mono_depth_rescaler",
-        CLIENT_FLAG_EN_SIMPLE_HELPER,
-        frame_bytes);
+        CLIENT_FLAG_EN_CAMERA_HELPER,
+        0);
     if (rc < 0) {
+        std::fprintf(
+            stderr,
+            "mono_depth_rescaler: failed to open disparity pipe '%s'\n",
+            _pipe.c_str());
         _running = false;
         _cv.notify_all();
         if (_worker.joinable()) {
             _worker.join();
         }
+        return false;
+    }
+    return true;
+}
+
+void MpaBackend::camera_cb(
+    int /*ch*/, camera_image_metadata_t meta, char* frame, void* context) {
+    auto* self = static_cast<MpaBackend*>(context);
+    ImageMetadata image_meta;
+    std::memcpy(&image_meta, &meta, sizeof(image_meta));
+    self->on_frame(
+        image_meta, reinterpret_cast<const float*>(frame),
+        self->_mw * self->_mh);
+}
+
+void MpaBackend::disc_cb(int /*ch*/, void* context) {
+    static_cast<MpaBackend*>(context)->on_disconnect();
+}
+
+void MpaBackend::on_disconnect() {
+    DisconnectCallback cb;
+    {
+        std::lock_guard<std::mutex> lk(_mtx);
+        cb = _on_disconnect;
+    }
+    std::fprintf(
+        stderr,
+        "mono_depth_rescaler: disconnected from disparity pipe '%s'\n",
+        _pipe.c_str());
+    if (cb) {
+        cb();
     }
 }
 
-void MpaBackend::helper_cb(int /*ch*/, char* data, int bytes, void* context) {
-    static_cast<MpaBackend*>(context)->on_data(data, bytes);
-}
-
-void MpaBackend::on_data(char* data, int bytes) {
-    if (!_running) {
+void MpaBackend::on_frame(
+    const ImageMetadata& meta, const float* pixels, int npix) {
+    if (!_running || !pixels) {
         return;
     }
-
-    const int npix = _mw * _mh;
-    const int hdr_sz = static_cast<int>(sizeof(ImageMetadata));
-    const int need = hdr_sz + npix * static_cast<int>(sizeof(float));
-    if (bytes != need) {
-        return;
-    }
-
-    ImageMetadata meta;
-    std::memcpy(&meta, data, sizeof(meta));
     if (meta.format != IMAGE_FORMAT_FLOAT32_VALUE ||
         meta.width != _mw || meta.height != _mh ||
         meta.size_bytes != npix * static_cast<int>(sizeof(float))) {
         return;
     }
 
-    Frame f;
-    f.metadata = meta;
-    f.disparity.assign(
-        reinterpret_cast<const float*>(data + hdr_sz),
-        reinterpret_cast<const float*>(data + hdr_sz) + npix);
-
     {
         std::lock_guard<std::mutex> lk(_mtx);
-        _buf.push_back(std::move(f));
-        while (static_cast<int>(_buf.size()) > _ring) {
-            _buf.pop_front();
-        }
+        _latest.metadata = meta;
+        std::memcpy(
+            _latest.disparity.data(), pixels,
+            static_cast<size_t>(npix) * sizeof(float));
+        _have_latest = true;
     }
     _cv.notify_one();
 }
@@ -101,15 +123,16 @@ void MpaBackend::worker_loop() {
         FrameCallback cb;
         {
             std::unique_lock<std::mutex> lk(_mtx);
-            _cv.wait(lk, [&] { return !_buf.empty() || !_running; });
-            if (_buf.empty()) {
+            _cv.wait(lk, [&] { return _have_latest || !_running; });
+            if (!_have_latest) {
                 if (!_running) {
                     return;
                 }
                 continue;
             }
-            frame = std::move(_buf.back());
-            _buf.clear();
+            frame.metadata = _latest.metadata;
+            frame.disparity = _latest.disparity;  // copy out for worker
+            _have_latest = false;
             cb = _callback;
         }
         if (cb) {

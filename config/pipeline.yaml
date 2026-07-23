@@ -1,5 +1,8 @@
 deployment:
-  profile: openvins
+  # Switch VIO backend here (service reads YAML; no --profile flag needed).
+  # qvio     -> qvio_extended  (enable voxl-qvio-server)
+  # openvins -> ov_extended    (enable voxl-open-vins-server)
+  profile: qvio
   profiles:
     openvins:
       vio_pipe: ov_extended

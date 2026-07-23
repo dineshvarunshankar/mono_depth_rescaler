@@ -26,8 +26,12 @@ struct ImageMetadata {
 
 static_assert(sizeof(ImageMetadata) == 40, "image metadata layout mismatch");
 
-inline std::vector<uint8_t> make_float_image_packet(
-    ImageMetadata metadata, const std::vector<float>& pixels, int width, int height) {
+inline void fill_float_image_packet(
+    ImageMetadata metadata,
+    const std::vector<float>& pixels,
+    int width,
+    int height,
+    std::vector<uint8_t>& packet_out) {
     const size_t expected = static_cast<size_t>(width) * height;
     if (pixels.size() != expected) {
         throw std::invalid_argument("pixel count does not match image dimensions");
@@ -38,8 +42,17 @@ inline std::vector<uint8_t> make_float_image_packet(
     metadata.stride = width * static_cast<int>(sizeof(float));
     metadata.format = IMAGE_FORMAT_FLOAT32_VALUE;
 
-    std::vector<uint8_t> packet(sizeof(metadata) + metadata.size_bytes);
-    std::memcpy(packet.data(), &metadata, sizeof(metadata));
-    std::memcpy(packet.data() + sizeof(metadata), pixels.data(), metadata.size_bytes);
+    const size_t need = sizeof(metadata) + static_cast<size_t>(metadata.size_bytes);
+    packet_out.resize(need);
+    std::memcpy(packet_out.data(), &metadata, sizeof(metadata));
+    std::memcpy(
+        packet_out.data() + sizeof(metadata), pixels.data(),
+        static_cast<size_t>(metadata.size_bytes));
+}
+
+inline std::vector<uint8_t> make_float_image_packet(
+    ImageMetadata metadata, const std::vector<float>& pixels, int width, int height) {
+    std::vector<uint8_t> packet;
+    fill_float_image_packet(metadata, pixels, width, height, packet);
     return packet;
 }

@@ -39,7 +39,7 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
     const YAML::Node pipeline = YAML::LoadFile(pipeline_yaml);
     const YAML::Node deployment = pipeline["deployment"];
     c.profile = profile_override.empty()
-        ? deployment["profile"].as<std::string>("openvins")
+        ? deployment["profile"].as<std::string>("qvio")
         : profile_override;
     const YAML::Node profile = deployment["profiles"][c.profile];
     if (!profile || (c.profile != "openvins" && c.profile != "qvio")) {

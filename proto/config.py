@@ -127,7 +127,7 @@ class Config:
     smoother: SmootherCfg
     modules: ModulesCfg
     anchors: AnchorsCfg
-    profile: str = "openvins"
+    profile: str = "qvio"
     # tracking-camera intrinsics (fisheye) for the tracking_extrinsic anchor
     # projection; optional so manually-built Configs need not supply them.
     tracking_front: IntrinsicsCfg | None = None
@@ -183,7 +183,7 @@ def load(
     extr_tof = _parse_extrinsics(extr_all["tof"])
 
     deployment = p["deployment"]
-    selected_profile = profile or deployment.get("profile", "openvins")
+    selected_profile = profile or deployment.get("profile", "qvio")
     profiles = deployment["profiles"]
     if selected_profile not in profiles:
         raise ValueError(f"unknown deployment profile: {selected_profile}")

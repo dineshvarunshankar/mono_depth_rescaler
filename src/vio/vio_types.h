@@ -26,6 +26,12 @@ typedef enum vio_point_quality_t {
     VIO_POINT_HIGH
 } vio_point_quality_t;
 
+#ifndef VIO_STATE_FAILED
+#define VIO_STATE_FAILED 0
+#define VIO_STATE_INITIALIZING 1
+#define VIO_STATE_OK 2
+#endif
+
 typedef struct __attribute__((packed)) vio_data_t {
     uint32_t magic_number;
     int32_t  quality;

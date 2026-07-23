@@ -306,10 +306,13 @@ static int find_span(const std::vector<double>& t, int n_ctrl, double x) {
 }
 
 static void basis_funs(const std::vector<double>& t, int span, double x,
-                       std::vector<double>& N) {
-    N.assign(SP_DEGREE + 1, 0.0);
+                       double N[SP_DEGREE + 1]) {
     N[0] = 1.0;
-    std::vector<double> left(SP_DEGREE + 1, 0.0), right(SP_DEGREE + 1, 0.0);
+    for (int i = 1; i <= SP_DEGREE; ++i) {
+        N[i] = 0.0;
+    }
+    double left[SP_DEGREE + 1] = {};
+    double right[SP_DEGREE + 1] = {};
     for (int j = 1; j <= SP_DEGREE; ++j) {
         left[j]  = x - t[span + 1 - j];
         right[j] = t[span + j] - x;
@@ -351,9 +354,9 @@ static bool build_pspline(std::vector<double> x, std::vector<double> y,
 
     // design matrix B (m x n)
     std::vector<double> B(m * n, 0.0);
-    std::vector<double> Nb;
     for (int i = 0; i < m; ++i) {
         int span = find_span(t, n, xs[i]);
+        double Nb[SP_DEGREE + 1];
         basis_funs(t, span, xs[i], Nb);
         for (int j = 0; j <= SP_DEGREE; ++j)
             B[i * n + (span - SP_DEGREE + j)] = Nb[j];
@@ -445,10 +448,12 @@ static Fit fit_spline(const std::vector<double>& x, const std::vector<double>& y
         double lo = knots[SP_DEGREE], hi = knots[n_ctrl];
         if (xx < lo || xx > hi) return std::nan("");   // extrapolate=False
         int span = find_span(knots, n_ctrl, xx);
-        std::vector<double> N;
+        double N[SP_DEGREE + 1];
         basis_funs(knots, span, xx, N);
         double v = 0.0;
-        for (int j = 0; j <= SP_DEGREE; ++j) v += coeffs[span - SP_DEGREE + j] * N[j];
+        for (int j = 0; j <= SP_DEGREE; ++j) {
+            v += coeffs[span - SP_DEGREE + j] * N[j];
+        }
         return v;
     };
     double x_min = *std::min_element(x.begin(), x.end());

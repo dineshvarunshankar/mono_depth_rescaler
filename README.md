@@ -35,6 +35,12 @@ voxl-docker -i voxl-cross                    # enter the build container
 adb push build/mono_depth_rescaler /usr/bin/
 adb push config/ /etc/mono_depth_rescaler/
 adb push services/mono_depth_rescaler.service /etc/systemd/system/
+adb shell mkdir -p /etc/systemd/system/voxl-tflite-server.service.d \
+  /etc/systemd/system/voxl-camera-server.service.d
+adb push services/voxl-tflite-server.service.d/partof-camera.conf \
+  /etc/systemd/system/voxl-tflite-server.service.d/
+adb push services/voxl-camera-server.service.d/wants-depth.conf \
+  /etc/systemd/system/voxl-camera-server.service.d/
 
 adb shell
 systemctl daemon-reload
@@ -42,25 +48,30 @@ systemctl enable --now mono_depth_rescaler
 systemctl status mono_depth_rescaler
 ```
 
-That starts the **systemd service**. The unit file always launches:
+The service runs `/usr/bin/mono_depth_rescaler` with **no profile/fov flags**.
+Choose the VIO backend in `/etc/mono_depth_rescaler/pipeline.yaml`:
 
+```yaml
+deployment:
+  profile: qvio      # or openvins
 ```
-/usr/bin/mono_depth_rescaler --profile qvio --fov crop
-```
 
-so you do not type those flags for normal use. Edit the unit (or use a drop-in)
-only if you want different defaults permanently.
+Also enable the matching VIO service (`voxl-qvio-server` or `voxl-open-vins-server`).
+`inference.fov` in the same YAML sets crop/stretch.
 
-To run the binary yourself once — for a temporary test, or a different profile —
-stop the service first, then:
+Camera lifecycle recovery:
+- `PartOf=voxl-camera-server` on the rescaler and on tflite (drop-in) so both
+  restart when the camera server restarts.
+- Camera drop-in `Wants=` tflite + rescaler so starting camera brings them back.
+- The binary exits non-zero on disparity/VIO disconnect or failed pipe open so
+  `Restart=always` can recover sticky disconnects.
+
+For a temporary manual override (debug only), stop the service first:
 
 ```bash
 systemctl stop mono_depth_rescaler
-mono_depth_rescaler --profile openvins --fov crop   # example: OpenVINS instead of qVIO
+mono_depth_rescaler --profile openvins --fov crop
 ```
-
-Same program; service = auto-start with qvio/crop; manual = temporary run with
-whatever flags you pass.
 
 ### 3. Configure the disparity producer
 
@@ -91,11 +102,11 @@ systemctl is-active mono_depth_rescaler
 
 ## Selected configuration
 
-- qVIO profile: `qvio_extended`, ToF cap 500
-- OpenVINS profile: `ov_extended`, ToF cap 500
-- Undistort with `crop` by default; `stretch` retains full FOV
+- Default YAML profile: `qvio` (`qvio_extended`); switch to `openvins` in YAML for `ov_extended`
+- ToF cap 500; undistort `crop` by default (`stretch` keeps full FOV)
 - Monotonic non-smoothing spline, 10 knots, uniform anchor weights
 - MAD outlier rejection (k=3.0); five-second calibration hold
+- VIO features used only when `v.state == VIO_STATE_OK` (qVIO and OpenVINS)
 
 `config/pipeline.yaml` is shared by Python and C++.
 

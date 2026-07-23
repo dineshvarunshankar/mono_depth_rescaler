@@ -20,7 +20,14 @@
 #include <vector>
 
 static std::atomic<bool> g_running{true};
+static std::atomic<int> g_exit_code{0};
 static void on_signal(int) { g_running = false; }
+
+static void request_restart(const char* why) {
+    std::fprintf(stderr, "mono_depth_rescaler: restart requested (%s)\n", why);
+    g_exit_code = 1;
+    g_running = false;
+}
 
 static constexpr int64_t FEATURE_TOL_NS = 200'000'000;
 
@@ -33,6 +40,7 @@ struct Arguments {
     std::string config{"/etc/mono_depth_rescaler/pipeline.yaml"};
     std::string intrinsics{"/etc/mono_depth_rescaler/intrinsics"};
     std::string extrinsics{"/etc/mono_depth_rescaler/extrinsics/starling2.yaml"};
+    // Optional overrides for manual debug only. Service uses YAML alone.
     std::string profile;
     std::string fov;
 };
@@ -44,8 +52,11 @@ Arguments parse_arguments(int argc, char** argv) {
         if (key == "--help") {
             std::printf(
                 "mono_depth_rescaler [--config PATH] [--intrinsics DIR] "
-                "[--extrinsics PATH] [--profile openvins|qvio] "
-                "[--fov crop|stretch]\n");
+                "[--extrinsics PATH]\n"
+                "  Profile and fov come from pipeline.yaml "
+                "(deployment.profile / inference.fov).\n"
+                "  Optional overrides for manual runs only: "
+                "[--profile openvins|qvio] [--fov crop|stretch]\n");
             std::exit(0);
         }
         if (i + 1 >= argc) {
@@ -76,11 +87,21 @@ static void fill_output_pipe_info(pipe_info_t* info, const std::string& name) {
     info->server_pid = 0;
 }
 
+struct Stats {
+    std::atomic<uint64_t> disp_in{0};
+    std::atomic<uint64_t> pose_miss{0};
+    std::atomic<uint64_t> vio_bad_state{0};
+    std::atomic<uint64_t> tof_miss{0};
+    std::atomic<uint64_t> fit_fail{0};
+    std::atomic<uint64_t> out_written{0};
+};
+
 int run(const Arguments& args) {
     Config cfg = Config::from_yaml(
         args.config, args.intrinsics, args.extrinsics, args.profile, args.fov);
     Pipeline pipeline(cfg);
     PoseBuffer pose_buf;
+    Stats stats;
 
     pipe_info_t out_info;
     fill_output_pipe_info(&out_info, cfg.output.pipe);
@@ -96,14 +117,21 @@ int run(const Arguments& args) {
     MpaBackend depth_source(
         cfg.inference.mpa_pipe_name,
         cfg.inference.input_w, cfg.inference.input_h,
-        /*ring_size=*/8, CH_DEPTH);
+        CH_DEPTH);
 
+    std::vector<uint8_t> out_packet;
     depth_source.set_frame_callback([&](const MpaBackend::Frame& frame) {
+        stats.disp_in.fetch_add(1, std::memory_order_relaxed);
         const int64_t image_time = frame.mid_timestamp_ns();
         ext_vio_data_t vio_pkt;
         float image_T[3], image_R[3][3];
         if (!pose_buf.get(
                 image_time, FEATURE_TOL_NS, vio_pkt, image_T, image_R)) {
+            stats.pose_miss.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        if (vio_pkt.v.state != VIO_STATE_OK) {
+            stats.vio_bad_state.fetch_add(1, std::memory_order_relaxed);
             return;
         }
 
@@ -115,51 +143,102 @@ int run(const Arguments& args) {
             {0.0f, 1.0f, 0.0f},
             {0.0f, 0.0f, 1.0f}};
         if (tof) {
-            ext_vio_data_t unused;
-            if (!pose_buf.get(
-                    tof->timestamp_ns, FEATURE_TOL_NS, unused, tof_T, tof_R)) {
+            if (!pose_buf.get_pose(
+                    tof->timestamp_ns, FEATURE_TOL_NS, tof_T, tof_R)) {
                 tof.reset();
+                stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
             }
+        } else {
+            stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
         }
 
         auto result = pipeline.process(
             image_time, vio_pkt, image_T, image_R, tof.get(), tof_T, tof_R,
             frame.disparity);
         if (!result) {
+            stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-        const std::vector<uint8_t> packet = make_float_image_packet(
+        fill_float_image_packet(
             frame.metadata, result->depth,
-            cfg.inference.input_w, cfg.inference.input_h);
+            cfg.inference.input_w, cfg.inference.input_h, out_packet);
         pipe_server_write(
             CH_OUT,
-            const_cast<char*>(reinterpret_cast<const char*>(packet.data())),
-            static_cast<int>(packet.size()));
+            reinterpret_cast<char*>(out_packet.data()),
+            static_cast<int>(out_packet.size()));
+        stats.out_written.fetch_add(1, std::memory_order_relaxed);
+    });
+
+    depth_source.set_disconnect_callback(
+        [] { request_restart("disparity pipe disconnect"); });
+    // ToF disconnect is soft: keep running on VIO anchors alone.
+    tof_source.set_disconnect_callback([] {
+        std::fprintf(
+            stderr,
+            "mono_depth_rescaler: ToF disconnected; continuing without ToF\n");
     });
 
     MpaVioSource vio(cfg.vio.pipe, CH_VIO);
+    vio.set_disconnect_callback(
+        [] { request_restart("VIO pipe disconnect"); });
 
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
 
-    vio.start(vio_cb);
-    tof_source.start();
-    depth_source.start();
-    std::printf(
-        "profile=%s fov=%s vio=%s tof_cap=%d output=%s\n",
-        cfg.profile.c_str(), cfg.inference.fov.c_str(), cfg.vio.pipe.c_str(),
-        cfg.anchors.tof_max_points, cfg.output.pipe.c_str());
+    if (!vio.start(vio_cb)) {
+        pipe_server_close(CH_OUT);
+        return 1;
+    }
+    if (!tof_source.start()) {
+        std::fprintf(
+            stderr,
+            "mono_depth_rescaler: warning: ToF unavailable at start; "
+            "continuing without ToF anchors\n");
+    }
+    if (!depth_source.start()) {
+        vio.stop();
+        tof_source.stop();
+        pipe_server_close(CH_OUT);
+        return 1;
+    }
 
+    std::printf(
+        "profile=%s fov=%s vio=%s disparity=%s tof_cap=%d output=%s "
+        "(from YAML%s)\n",
+        cfg.profile.c_str(), cfg.inference.fov.c_str(), cfg.vio.pipe.c_str(),
+        cfg.inference.mpa_pipe_name.c_str(),
+        cfg.anchors.tof_max_points, cfg.output.pipe.c_str(),
+        args.profile.empty() && args.fov.empty() ? "" : "; CLI override set");
+
+    uint64_t ticks = 0;
     while (g_running) {
         struct timespec ts = {0, 50'000'000};
         nanosleep(&ts, nullptr);
+        if ((++ticks % 40) == 0) {  // ~2 s
+            std::fprintf(
+                stderr,
+                "mono_depth_rescaler stats: disp_in=%llu pose_miss=%llu "
+                "vio_bad=%llu tof_miss=%llu fit_fail=%llu out=%llu\n",
+                static_cast<unsigned long long>(
+                    stats.disp_in.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    stats.pose_miss.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    stats.vio_bad_state.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    stats.tof_miss.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    stats.fit_fail.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    stats.out_written.load(std::memory_order_relaxed)));
+        }
     }
 
     depth_source.stop();
     tof_source.stop();
     vio.stop();
     pipe_server_close(CH_OUT);
-    return 0;
+    return g_exit_code.load();
 }
 
 int main(int argc, char** argv) {

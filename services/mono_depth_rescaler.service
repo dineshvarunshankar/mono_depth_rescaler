@@ -1,15 +1,20 @@
 [Unit]
 Description=mono_depth_rescaler
 SourcePath=/usr/bin/mono_depth_rescaler
-After=voxl-wait-for-fs.service voxl-tflite-server.service voxl-qvio-server.service
+After=voxl-wait-for-fs.service voxl-camera-server.service voxl-tflite-server.service voxl-qvio-server.service voxl-open-vins-server.service
+Wants=voxl-camera-server.service voxl-tflite-server.service
+PartOf=voxl-camera-server.service
 Requires=voxl-wait-for-fs.service
 
 [Service]
 User=root
 Type=simple
-Restart=on-failure
+Restart=always
 RestartSec=3s
-ExecStart=/usr/bin/mono_depth_rescaler --profile qvio --fov crop
+StartLimitBurst=5
+StartLimitInterval=30s
+# Profile and fov come from /etc/mono_depth_rescaler/pipeline.yaml
+ExecStart=/usr/bin/mono_depth_rescaler
 
 [Install]
 WantedBy=multi-user.target
