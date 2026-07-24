@@ -49,7 +49,8 @@ struct AnchorsConfig {
     std::string tof_pipe{"tof"};
     int tof_confidence_min{128};
     int tof_max_points{500};
-    int64_t tof_tolerance_ns{200'000'000LL};
+    int64_t tof_tolerance_ns{250'000'000LL};
+    int64_t feature_tol_ns{100'000'000LL};
     std::string projection{"world_pose"};
 };
 

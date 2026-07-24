@@ -74,7 +74,9 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
     c.anchors.tof_confidence_min =
         anchors["tof_confidence_min"].as<int>(128);
     c.anchors.tof_tolerance_ns =
-        anchors["tof_tolerance_ms"].as<int64_t>(200) * 1'000'000LL;
+        anchors["tof_tolerance_ms"].as<int64_t>(250) * 1'000'000LL;
+    c.anchors.feature_tol_ns =
+        anchors["feature_tol_ms"].as<int64_t>(100) * 1'000'000LL;
     c.anchors.tof_max_points =
         profile["tof_max_points"].as<int>();
     c.anchors.projection =
@@ -83,6 +85,7 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
         c.anchors.tof_confidence_min < 0 ||
         c.anchors.tof_confidence_min > 255 ||
         c.anchors.tof_tolerance_ns < 0 ||
+        c.anchors.feature_tol_ns <= 0 ||
         c.anchors.projection != "world_pose") {
         throw std::runtime_error("profile requires ToF and world_pose projection");
     }

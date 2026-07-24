@@ -7,3 +7,4 @@ results/
 *.npy
 models/
 docs/
+SESSION_CONTEXT.md

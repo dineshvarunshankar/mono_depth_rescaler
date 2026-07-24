@@ -94,44 +94,47 @@ std::unique_ptr<RescaleResult> Pipeline::process(
         have_fresh = fresh.valid;
     }
 
-    const fits::Fit* fit = nullptr;
-    bool    held;
-    int64_t calib_age_ns;
-    int     n_anchors;
-
     if (have_fresh) {
         _held = fresh;
         _has_held = true;
         _held_t_ns = frame_timestamp_ns;
-        fit = &_held;
-        held = false;
-        calib_age_ns = 0;
-        n_anchors = static_cast<int>(y.size());
-    } else if (
-        _has_held &&
-        frame_timestamp_ns - _held_t_ns <= r.max_hold_age_ns) {
-        fit = &_held;
-        held = true;
-        calib_age_ns = frame_timestamp_ns - _held_t_ns;
-        n_anchors = 0;
-    } else {
+        return render(_held, disparity, false, static_cast<int>(y.size()), 0);
+    }
+    return apply_held(frame_timestamp_ns, disparity);
+}
+
+std::unique_ptr<RescaleResult> Pipeline::apply_held(
+    int64_t frame_timestamp_ns, const std::vector<float>& disparity) {
+    if (disparity.size() !=
+        static_cast<size_t>(_cfg.inference.input_w * _cfg.inference.input_h)) {
+        return nullptr;
+    }
+    if (!_has_held ||
+        frame_timestamp_ns - _held_t_ns > _cfg.rescale.max_hold_age_ns) {
         _has_held = false;
         return nullptr;
     }
+    return render(
+        _held, disparity, true, 0, frame_timestamp_ns - _held_t_ns);
+}
 
+std::unique_ptr<RescaleResult> Pipeline::render(
+    const fits::Fit& fit, const std::vector<float>& disparity,
+    bool held, int n_anchors, int64_t calib_age_ns) const {
+    const auto& r = _cfg.rescale;
     const int npix = _cfg.inference.input_w * _cfg.inference.input_h;
     const double d_lo = 1.0 / r.depth_max, d_hi = 1.0 / r.depth_min;
     auto res = std::make_unique<RescaleResult>();
     res->depth.resize(npix);
     for (int i = 0; i < npix; ++i) {
-        double x = std::min(std::max(double(disparity[i]), fit->x_min), fit->x_max);
-        double md = fit->predict(x);
+        double x = std::min(std::max(double(disparity[i]), fit.x_min), fit.x_max);
+        double md = fit.predict(x);
         md = std::min(std::max(md, d_lo), d_hi);
         res->depth[i] = float(1.0 / md);
     }
-    res->params       = fit->params;
+    res->params       = fit.params;
     res->n_anchors    = n_anchors;
-    res->inlier_ratio = held ? 0.0f : fit->inlier_ratio;
+    res->inlier_ratio = held ? 0.0f : fit.inlier_ratio;
     res->held         = held;
     res->calib_age_ns = calib_age_ns;
     return res;

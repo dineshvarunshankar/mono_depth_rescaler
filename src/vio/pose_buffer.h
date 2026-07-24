@@ -23,6 +23,11 @@ public:
                   float T_out[3], float R_out[3][3]) const;
 
 private:
+    // Shared core of get()/get_pose(). pkt_out optional (nullptr to skip copy).
+    bool lookup(int64_t t_ns, int64_t feature_tol_ns,
+                ext_vio_data_t* pkt_out,
+                float T_out[3], float R_out[3][3]) const;
+
     int                        _cap;
     mutable std::mutex         _mtx;
     std::deque<ext_vio_data_t> _buf;  // newest last, sorted by v.timestamp_ns

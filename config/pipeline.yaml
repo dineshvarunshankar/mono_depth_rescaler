@@ -40,7 +40,8 @@ anchors:
   use_tof: true
   tof_pipe: tof
   tof_confidence_min: 128   # conf is binary (0/255)
-  tof_tolerance_ms: 200
+  tof_tolerance_ms: 250
+  feature_tol_ms: 100       # max VIO-pose age when matching a frame/ToF timestamp
   # balancing: proto only; the C++ deploy unions VIO+ToF (balance_mode off)
   balance_mode: "off"       # off | adaptive_source | adaptive_count
   balance_vio_fraction: 0.5 # adaptive_source only

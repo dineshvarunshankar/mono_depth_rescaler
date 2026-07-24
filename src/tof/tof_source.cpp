@@ -7,6 +7,9 @@
 #include <cstring>
 #include <utility>
 
+static_assert(sizeof(tof2_data_t) == TOF_PACKET_BYTES,
+              "tof2_data_t size does not match TOF_PACKET_BYTES");
+
 TofSource::TofSource(std::string pipe, int ch)
     : _pipe(std::move(pipe)), _ch(ch) {
     _raw_latest.resize(TOF_PACKET_BYTES);
@@ -32,7 +35,7 @@ bool TofSource::start() {
         _pipe.c_str(),
         "mono_depth_rescaler",
         CLIENT_FLAG_EN_SIMPLE_HELPER,
-        static_cast<int>(TOF_RECOMMENDED_READ_BUF_SIZE));
+        static_cast<int>(TOF2_RECOMMENDED_READ_BUF_SIZE));
     if (rc < 0) {
         std::fprintf(
             stderr,
@@ -103,9 +106,9 @@ void TofSource::on_data(char* data, int bytes) {
     }
 
     int n_packets = 0;
-    tof_data_t* packets = pipe_validate_tof_data_t(data, bytes, &n_packets);
+    tof2_data_t* packets = pipe_validate_tof2_data_t(data, bytes, &n_packets);
     if (!packets || n_packets <= 0) {
-        // Fallback: accept exact multiples of one gen-1 packet.
+        // Fallback: accept exact multiples of one tof2 packet.
         if (bytes % static_cast<int>(TOF_PACKET_BYTES) != 0) {
             return;
         }
@@ -122,7 +125,7 @@ void TofSource::on_data(char* data, int bytes) {
     }
 
     // Keep only the newest packet; decode lazily in nearest().
-    const tof_data_t& latest = packets[n_packets - 1];
+    const tof2_data_t& latest = packets[n_packets - 1];
     std::lock_guard<std::mutex> lock(_mutex);
     std::memcpy(&_raw_latest[0], &latest, TOF_PACKET_BYTES);
     _raw_dirty = true;

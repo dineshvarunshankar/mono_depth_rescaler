@@ -33,7 +33,7 @@ voxl-docker -i voxl-cross                    # enter the build container
 
 ```bash
 adb push build/mono_depth_rescaler /usr/bin/
-adb push config/ /etc/mono_depth_rescaler/
+adb push config/. /etc/mono_depth_rescaler/
 adb push services/mono_depth_rescaler.service /etc/systemd/system/
 adb shell mkdir -p /etc/systemd/system/voxl-tflite-server.service.d \
   /etc/systemd/system/voxl-camera-server.service.d

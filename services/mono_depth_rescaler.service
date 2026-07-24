@@ -5,14 +5,14 @@ After=voxl-wait-for-fs.service voxl-camera-server.service voxl-tflite-server.ser
 Wants=voxl-camera-server.service voxl-tflite-server.service
 PartOf=voxl-camera-server.service
 Requires=voxl-wait-for-fs.service
+StartLimitBurst=5
+StartLimitIntervalSec=30s
 
 [Service]
 User=root
 Type=simple
 Restart=always
 RestartSec=3s
-StartLimitBurst=5
-StartLimitInterval=30s
 # Profile and fov come from /etc/mono_depth_rescaler/pipeline.yaml
 ExecStart=/usr/bin/mono_depth_rescaler
 

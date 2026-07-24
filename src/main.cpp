@@ -29,8 +29,6 @@ static void request_restart(const char* why) {
     g_running = false;
 }
 
-static constexpr int64_t FEATURE_TOL_NS = 200'000'000;
-
 static constexpr int CH_VIO = 0;
 static constexpr int CH_TOF = 1;
 static constexpr int CH_DEPTH = 2;
@@ -125,38 +123,46 @@ int run(const Arguments& args) {
         const int64_t image_time = frame.mid_timestamp_ns();
         ext_vio_data_t vio_pkt;
         float image_T[3], image_R[3][3];
-        if (!pose_buf.get(
-                image_time, FEATURE_TOL_NS, vio_pkt, image_T, image_R)) {
-            stats.pose_miss.fetch_add(1, std::memory_order_relaxed);
-            return;
-        }
-        if (vio_pkt.v.state != VIO_STATE_OK) {
-            stats.vio_bad_state.fetch_add(1, std::memory_order_relaxed);
-            return;
-        }
+        const bool have_pose = pose_buf.get(
+            image_time, cfg.anchors.feature_tol_ns, vio_pkt, image_T, image_R);
 
-        std::shared_ptr<const TofFrame> tof = tof_source.nearest(
-            image_time, cfg.anchors.tof_tolerance_ns);
-        float tof_T[3] = {0.0f, 0.0f, 0.0f};
-        float tof_R[3][3] = {
-            {1.0f, 0.0f, 0.0f},
-            {0.0f, 1.0f, 0.0f},
-            {0.0f, 0.0f, 1.0f}};
-        if (tof) {
-            if (!pose_buf.get_pose(
-                    tof->timestamp_ns, FEATURE_TOL_NS, tof_T, tof_R)) {
-                tof.reset();
+        // Without a valid pose we cannot build fresh anchors, but a held fit
+        // still rescales the frame, so keep publishing through brief VIO gaps.
+        std::unique_ptr<RescaleResult> result;
+        if (!have_pose) {
+            stats.pose_miss.fetch_add(1, std::memory_order_relaxed);
+            result = pipeline.apply_held(image_time, frame.disparity);
+        } else if (vio_pkt.v.state != VIO_STATE_OK) {
+            stats.vio_bad_state.fetch_add(1, std::memory_order_relaxed);
+            result = pipeline.apply_held(image_time, frame.disparity);
+        } else {
+            std::shared_ptr<const TofFrame> tof = tof_source.nearest(
+                image_time, cfg.anchors.tof_tolerance_ns);
+            float tof_T[3] = {0.0f, 0.0f, 0.0f};
+            float tof_R[3][3] = {
+                {1.0f, 0.0f, 0.0f},
+                {0.0f, 1.0f, 0.0f},
+                {0.0f, 0.0f, 1.0f}};
+            if (tof) {
+                if (!pose_buf.get_pose(
+                        tof->timestamp_ns, cfg.anchors.feature_tol_ns,
+                        tof_T, tof_R)) {
+                    tof.reset();
+                    stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
+                }
+            } else {
                 stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
             }
-        } else {
-            stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
-        }
 
-        auto result = pipeline.process(
-            image_time, vio_pkt, image_T, image_R, tof.get(), tof_T, tof_R,
-            frame.disparity);
+            result = pipeline.process(
+                image_time, vio_pkt, image_T, image_R, tof.get(), tof_T, tof_R,
+                frame.disparity);
+            if (!result) {
+                stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+        }
         if (!result) {
-            stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
             return;
         }
         fill_float_image_packet(
