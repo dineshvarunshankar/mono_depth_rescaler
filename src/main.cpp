@@ -20,14 +20,7 @@
 #include <vector>
 
 static std::atomic<bool> g_running{true};
-static std::atomic<int> g_exit_code{0};
 static void on_signal(int) { g_running = false; }
-
-static void request_restart(const char* why) {
-    std::fprintf(stderr, "mono_depth_rescaler: restart requested (%s)\n", why);
-    g_exit_code = 1;
-    g_running = false;
-}
 
 static constexpr int CH_VIO = 0;
 static constexpr int CH_TOF = 1;
@@ -126,8 +119,7 @@ int run(const Arguments& args) {
         const bool have_pose = pose_buf.get(
             image_time, cfg.anchors.feature_tol_ns, vio_pkt, image_T, image_R);
 
-        // Without a valid pose we cannot build fresh anchors, but a held fit
-        // still rescales the frame, so keep publishing through brief VIO gaps.
+        // No valid pose: rescale from the held fit.
         std::unique_ptr<RescaleResult> result;
         if (!have_pose) {
             stats.pose_miss.fetch_add(1, std::memory_order_relaxed);
@@ -175,8 +167,12 @@ int run(const Arguments& args) {
         stats.out_written.fetch_add(1, std::memory_order_relaxed);
     });
 
-    depth_source.set_disconnect_callback(
-        [] { request_restart("disparity pipe disconnect"); });
+    // Disparity disconnect is soft: auto-reconnect, no restart.
+    depth_source.set_disconnect_callback([] {
+        std::fprintf(
+            stderr,
+            "mono_depth_rescaler: disparity disconnected; awaiting reconnect\n");
+    });
     // ToF disconnect is soft: keep running on VIO anchors alone.
     tof_source.set_disconnect_callback([] {
         std::fprintf(
@@ -185,8 +181,12 @@ int run(const Arguments& args) {
     });
 
     MpaVioSource vio(cfg.vio.pipe, CH_VIO);
-    vio.set_disconnect_callback(
-        [] { request_restart("VIO pipe disconnect"); });
+    // VIO disconnect is soft: auto-reconnect; held fit covers the gap.
+    vio.set_disconnect_callback([] {
+        std::fprintf(
+            stderr,
+            "mono_depth_rescaler: VIO disconnected; awaiting reconnect\n");
+    });
 
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
@@ -244,7 +244,7 @@ int run(const Arguments& args) {
     tof_source.stop();
     vio.stop();
     pipe_server_close(CH_OUT);
-    return g_exit_code.load();
+    return 0;
 }
 
 int main(int argc, char** argv) {

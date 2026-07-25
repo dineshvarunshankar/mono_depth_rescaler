@@ -40,8 +40,7 @@ public:
         const float R_imu_tof_to_vio[3][3],
         const std::vector<float>& disparity);
 
-    // Apply the held fit to a new frame without a fresh pose/anchors. Returns
-    // nullptr if no held fit is available or it has aged past max_hold_age_ns.
+    // Rescale from the held fit; nullptr if none or aged past max_hold_age_ns.
     std::unique_ptr<RescaleResult> apply_held(
         int64_t frame_timestamp_ns, const std::vector<float>& disparity);
 

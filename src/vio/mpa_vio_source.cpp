@@ -30,6 +30,8 @@ void MpaVioSource::on_disconnect() {
     {
         std::lock_guard<std::mutex> lk(_mtx);
         cb = _on_disconnect;
+        // Discard any partial packet.
+        _remnant.clear();
     }
     std::fprintf(
         stderr, "mono_depth_rescaler: disconnected from VIO pipe '%s'\n",
