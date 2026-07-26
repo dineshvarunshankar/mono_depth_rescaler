@@ -51,6 +51,10 @@ struct AnchorsConfig {
     int tof_max_points{500};
     int64_t tof_tolerance_ns{250'000'000LL};
     int64_t feature_tol_ns{100'000'000LL};
+    int tof_cell_px{4};            // ToF grid cell size in px; 0 = no grid
+    int max_per_cell{1};           // ToF anchors kept per cell (K)
+    std::string tof_cell_pick{"nearest"};  // within-cell pick: first|nearest|median
+    float tof_trust_range_m{10.0f};// drop ToF beyond this depth
     std::string projection{"world_pose"};
 };
 

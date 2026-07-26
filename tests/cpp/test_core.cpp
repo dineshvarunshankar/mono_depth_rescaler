@@ -1,3 +1,4 @@
+#include "core/anchor_grid.h"
 #include "core/camera_model.h"
 #include "core/config.h"
 #include "core/fits.h"
@@ -204,6 +205,7 @@ void test_spline() {
 
 void test_pipeline_union_and_hold() {
     Config cfg = synthetic_config();
+    cfg.anchors.tof_cell_px = 0;  // no grid: union path
     Pipeline pipeline(cfg);
     float T[3], R[3][3];
     identity_pose(T, R);
@@ -248,6 +250,53 @@ void test_pipeline_union_and_hold() {
     assert(!stale);
 }
 
+void test_pipeline_grid_fusion() {
+    Config cfg = synthetic_config();
+    cfg.anchors.tof_cell_px = 6;  // ~16 cells/axis at w=100
+    Pipeline pipeline(cfg);
+    float T[3], R[3][3];
+    identity_pose(T, R);
+
+    ext_vio_data_t packet{};
+    packet.n_total_features = 5;
+    packet.v.timestamp_ns = 1'000'000'000;
+    packet.v.state = VIO_STATE_OK;
+    for (int i = 0; i < 5; ++i) {
+        const float depth = 1.0f + i;
+        const int u = 20 + i * 15;
+        packet.features[i].point_quality = VIO_POINT_HIGH;
+        packet.features[i].tsf[0] = (u - 50.0f) * depth / 50.0f;
+        packet.features[i].tsf[1] = 0.0f;
+        packet.features[i].tsf[2] = depth;
+    }
+
+    TofFrame tof;  // 10 coincident ToF points -> one cell; 2.5m unique vs VIO
+    tof.points.assign(10, TofPoint{0.0f, 0.0f, 2.5f});
+    tof.noise.assign(10, 0.02f);
+    tof.confidence.assign(10, 255);
+    ProjectedAnchors c = pipeline.build_anchors(packet, T, R, &tof, T, R);
+
+    int n_tof = 0;
+    for (float d : c.depth) {
+        if (std::abs(d - 2.5f) < 1e-4f) ++n_tof;
+    }
+    assert(n_tof == 1);              // 10 coincident ToF thinned to one
+    int n_vio = static_cast<int>(c.depth.size()) - n_tof;
+    assert(n_vio == 5);             // all VIO kept (never evicted)
+
+    // grid=1: every anchor in ONE cell. ToF thins to 1; VIO must NOT be capped.
+    Config cfg1 = synthetic_config();
+    cfg1.anchors.tof_cell_px = 100;  // 1 cell (whole image)
+    Pipeline p1(cfg1);
+    ProjectedAnchors c1 = p1.build_anchors(packet, T, R, &tof, T, R);
+    int n_tof1 = 0;
+    for (float d : c1.depth) {
+        if (std::abs(d - 2.5f) < 1e-4f) ++n_tof1;
+    }
+    assert(n_tof1 == 1);
+    assert(static_cast<int>(c1.depth.size()) - n_tof1 == 5);  // all VIO survive
+}
+
 void test_image_packet() {
     ImageMetadata metadata{};
     metadata.timestamp_ns = 42;
@@ -265,13 +314,48 @@ void test_image_packet() {
 }
 }
 
+void test_grid_thin() {
+    const float W = 256.0f, H = 256.0f;
+    std::vector<size_t> tk;
+    std::vector<float> tu, tv, td;
+    for (int i = 0; i < 10; ++i) { tu.push_back(float(i)); tv.push_back(0.0f); td.push_back(1.0f); }
+
+    // 10 in one cell, k=1 -> one
+    grid_thin(tu, tv, td, 16, 1, W, H, "first", tk);
+    assert(tk.size() == 1 && tk[0] == 0);
+
+    // k=3 -> even stride 0,4,9
+    tk.clear();
+    grid_thin(tu, tv, td, 16, 3, W, H, "first", tk);
+    assert(tk.size() == 3 && tk[0] == 0 && tk[1] == 4 && tk[2] == 9);
+
+    // nearest pick -> min depth
+    tk.clear();
+    grid_thin({0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {5.0f, 2.0f, 9.0f},
+              16, 1, W, H, "nearest", tk);
+    assert(tk.size() == 1 && tk[0] == 1);
+
+    // distinct cells all kept
+    tk.clear();
+    grid_thin({8.0f, 40.0f, 200.0f}, {8.0f, 40.0f, 120.0f}, {1.0f, 1.0f, 1.0f},
+              16, 1, W, H, "first", tk);
+    assert(tk.size() == 3);
+
+    // border clamp, no crash
+    tk.clear();
+    grid_thin({256.0f}, {256.0f}, {1.0f}, 16, 1, W, H, "first", tk);
+    assert(tk.size() == 1 && tk[0] == 0);
+}
+
 int main() {
+    test_grid_thin();
     test_profiles();
     test_tof_decode();
     test_tof_projection_and_cap();
     test_tof_projection_python_golden();
     test_spline();
     test_pipeline_union_and_hold();
+    test_pipeline_grid_fusion();
     test_image_packet();
     std::cout << "rescaler_core_tests passed\n";
     return 0;

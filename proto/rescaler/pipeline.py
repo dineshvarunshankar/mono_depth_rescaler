@@ -9,6 +9,7 @@ from .camera_model import CameraModel
 from .preprocess import Preprocessor
 from .geometry import project_features, compute_weights, project_features_tracking_extrinsic
 from .tof_anchors import tof_anchors
+from .anchor_grid import grid_thin
 from . import fits
 from .smoother import EMASmoother, KalmanSmoother
 from ..modules.rolling_shutter import RollingShutter
@@ -170,14 +171,32 @@ class Pipeline:
         uv, depth, var, idx = uv[keep], depth[keep], var[keep], idx[keep]
 
         if self.cfg.anchors.use_tof and frame.tof is not None:
-            # union VIO + quality ToF anchors; optional balancing (BALANCE_MODES)
+            # grid-thin ToF per cell (image space); no grid -> tof_max_points cap
             a = self.cfg.anchors
+            grid = round(self.pre.dst_w / a.tof_cell_px) if a.tof_cell_px > 0 else 0
+            cap = 0 if grid > 0 else a.tof_max_points
             uv_t, depth_t, var_t = tof_anchors(
                 frame.tof, frame.pose, frame.pose,
                 self.R_tof, self.T_tof, self.R_cam, self.T_cam,
-                self.pre, a.tof_confidence_min, a.tof_max_points)
+                self.pre, a.tof_confidence_min, cap)
             keep_t = (depth_t >= r.anchor_depth_min) & (depth_t <= r.anchor_depth_max)
+            if grid > 0:
+                keep_t &= depth_t <= a.tof_trust_range_m
             uv_t, depth_t, var_t = uv_t[keep_t], depth_t[keep_t], var_t[keep_t]
+
+            if grid > 0:
+                ti = grid_thin(uv_t, depth_t, grid, a.max_per_cell,
+                               self.pre.dst_w, self.pre.dst_h, a.tof_cell_pick)
+                su = np.concatenate([uv, uv_t[ti]])  # all VIO + thinned ToF
+                sd = np.concatenate([depth, depth_t[ti]])
+                sv = np.concatenate([var, var_t[ti]])
+                if len(sd) < r.min_anchors:  # scarce fallback: keep all
+                    su = np.concatenate([uv, uv_t])
+                    sd = np.concatenate([depth, depth_t])
+                    sv = np.concatenate([var, var_t])
+                if len(sd) < r.min_anchors:
+                    return None
+                return self._sample(disparity, su), sd, compute_weights(sd, sv, r.weighting)
 
             if a.balance_mode == "adaptive_count":
                 target = (

@@ -1,8 +1,42 @@
 #include "pipeline.h"
 #include "tof_anchors.h"
+#include "anchor_grid.h"
 
 #include <algorithm>
 #include <cmath>
+
+namespace {
+void append(ProjectedAnchors& dst, const ProjectedAnchors& src) {
+    dst.u.insert(dst.u.end(), src.u.begin(), src.u.end());
+    dst.v.insert(dst.v.end(), src.v.begin(), src.v.end());
+    dst.depth.insert(dst.depth.end(), src.depth.begin(), src.depth.end());
+    dst.var.insert(dst.var.end(), src.var.begin(), src.var.end());
+}
+
+ProjectedAnchors gate(const ProjectedAnchors& a, float lo, float hi) {
+    ProjectedAnchors out;
+    for (size_t i = 0; i < a.depth.size(); ++i) {
+        if (a.depth[i] >= lo && a.depth[i] <= hi) {
+            out.u.push_back(a.u[i]);
+            out.v.push_back(a.v[i]);
+            out.depth.push_back(a.depth[i]);
+            out.var.push_back(a.var[i]);
+        }
+    }
+    return out;
+}
+
+ProjectedAnchors gather(const ProjectedAnchors& a, const std::vector<size_t>& idx) {
+    ProjectedAnchors out;
+    for (const size_t i : idx) {
+        out.u.push_back(a.u[i]);
+        out.v.push_back(a.v[i]);
+        out.depth.push_back(a.depth[i]);
+        out.var.push_back(a.var[i]);
+    }
+    return out;
+}
+}  // namespace
 
 Pipeline::Pipeline(const Config& cfg)
     : _cfg(cfg),
@@ -36,26 +70,44 @@ ProjectedAnchors Pipeline::build_anchors(
     const TofFrame* tof,
     const float T_imu_tof_wrt_vio[3],
     const float R_imu_tof_to_vio[3][3]) const {
-    ProjectedAnchors anchors = project_features(
+    ProjectedAnchors vio = project_features(
         pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
         _cfg.extr_hires.R, _cfg.extr_hires.T,
         _pre, _cfg.vio.min_quality);
     if (!tof) {
-        return anchors;
+        return vio;  // no ToF: keep all VIO
     }
 
-    ProjectedAnchors tof_anchors = project_tof_anchors(
+    const auto& a = _cfg.anchors;
+    const int grid = a.tof_cell_px > 0 ? _pre.dst_w() / a.tof_cell_px : 0;
+    const int cap = grid > 0 ? 0 : a.tof_max_points;
+    ProjectedAnchors tof_a = project_tof_anchors(
         *tof, T_imu_tof_wrt_vio, R_imu_tof_to_vio,
         T_imu_image_wrt_vio, R_imu_image_to_vio,
         _cfg.extr_tof, _cfg.extr_hires, _pre,
-        _cfg.anchors.tof_confidence_min, _cfg.anchors.tof_max_points);
-    anchors.u.insert(anchors.u.end(), tof_anchors.u.begin(), tof_anchors.u.end());
-    anchors.v.insert(anchors.v.end(), tof_anchors.v.begin(), tof_anchors.v.end());
-    anchors.depth.insert(
-        anchors.depth.end(), tof_anchors.depth.begin(), tof_anchors.depth.end());
-    anchors.var.insert(
-        anchors.var.end(), tof_anchors.var.begin(), tof_anchors.var.end());
-    return anchors;
+        a.tof_confidence_min, cap);
+
+    if (grid <= 0) {
+        append(vio, tof_a);  // no grid: union VIO + capped ToF
+        return vio;
+    }
+
+    const auto& r = _cfg.rescale;
+    ProjectedAnchors v = gate(vio, r.anchor_depth_min, r.anchor_depth_max);
+    ProjectedAnchors t = gate(
+        tof_a, r.anchor_depth_min,
+        std::min(r.anchor_depth_max, a.tof_trust_range_m));
+    std::vector<size_t> tk;
+    grid_thin(t.u, t.v, t.depth, grid, a.max_per_cell,
+              static_cast<float>(_pre.dst_w()), static_cast<float>(_pre.dst_h()),
+              a.tof_cell_pick, tk);
+    ProjectedAnchors out = v;  // all VIO + thinned ToF
+    append(out, gather(t, tk));
+    if (out.depth.size() < static_cast<size_t>(r.min_anchors)) {
+        out = v;  // scarce fallback: keep all
+        append(out, t);
+    }
+    return out;
 }
 
 std::unique_ptr<RescaleResult> Pipeline::process(

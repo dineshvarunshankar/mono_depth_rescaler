@@ -86,6 +86,10 @@ class AnchorsCfg:
     balance_vio_sufficient: int = 10
     balance_tof_fallback: int = 64
     tof_tolerance_ms: int = 200
+    tof_cell_px: int = 4             # ToF grid cell size in px; 0 = no grid
+    max_per_cell: int = 1            # ToF anchors kept per cell (K)
+    tof_cell_pick: str = "nearest"   # within-cell pick: first | nearest | median
+    tof_trust_range_m: float = 10.0  # drop ToF beyond this depth
 
 
 @dataclass
@@ -268,6 +272,10 @@ def load(
             balance_vio_sufficient=an.get("balance_vio_sufficient", 10),
             balance_tof_fallback=an.get("balance_tof_fallback", 64),
             tof_tolerance_ms=an.get("tof_tolerance_ms", 200),
+            tof_cell_px=an.get("tof_cell_px", 4),
+            max_per_cell=an.get("max_per_cell", 1),
+            tof_cell_pick=an.get("tof_cell_pick", "nearest"),
+            tof_trust_range_m=an.get("tof_trust_range_m", 10.0),
         ),
         profile=selected_profile,
         tracking_front=tf_intr,

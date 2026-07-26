@@ -33,16 +33,18 @@ def tof_anchors(tof: TofFrame, pose_tof: VioPose, pose_hires: VioPose,
                 R_hires: np.ndarray, T_hires: np.ndarray,
                 pre: Preprocessor, conf_min: int, max_points: int
                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return (uv (M,2), depth (M,), var (M,)) for in-view quality ToF points."""
+    """Return (uv (M,2), depth (M,), var (M,)) for in-view quality ToF points.
+
+    max_points <= 0: no cap (the grid caps in image space downstream).
+    """
     keep = ((tof.conf >= conf_min)
             & np.isfinite(tof.xyz).all(axis=1)
             & (tof.noise > 0))
-    xyz, noise, conf = tof.xyz[keep], tof.noise[keep], tof.conf[keep]
+    xyz, noise = tof.xyz[keep], tof.noise[keep]
     if len(xyz) == 0:
         return np.empty((0, 2)), np.empty(0), np.empty(0)
 
-    if len(xyz) > max_points:
-        # even stride over the sensor grid (confidence is binary 0/255)
+    if max_points > 0 and len(xyz) > max_points:
         idx = np.linspace(0, len(xyz) - 1, max_points).astype(int)
         xyz, noise = xyz[idx], noise[idx]
 

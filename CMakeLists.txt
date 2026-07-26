@@ -23,6 +23,7 @@ add_library(rescaler_core
     src/core/fits.cpp
     src/core/pipeline.cpp
     src/core/tof_anchors.cpp
+    src/core/anchor_grid.cpp
     src/tof/tof_types.cpp
     src/vio/pose_buffer.cpp)
 target_include_directories(rescaler_core PUBLIC src ${OpenCV_INCLUDE_DIRS})

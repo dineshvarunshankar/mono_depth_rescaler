@@ -78,7 +78,10 @@ ProjectedAnchors project_tof_anchors(
     }
 
     ProjectedAnchors out;
-    for (const size_t i : evenly_capped(valid, max_points)) {
+    // max_points <= 0: no cap (selection happens downstream in grid fusion)
+    std::vector<size_t> selected =
+        max_points > 0 ? evenly_capped(valid, max_points) : valid;
+    for (const size_t i : selected) {
         const auto& point = frame.points[i];
         const float p_tof[3] = {point.x, point.y, point.z};
         float p_imu_tof[3], p_world[3], p_imu_image[3], p_hires[3];

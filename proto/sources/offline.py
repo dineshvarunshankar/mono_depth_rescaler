@@ -121,6 +121,24 @@ def frames_with_depth(
         cam_rows = list(csv.DictReader(open(csv_path, newline="")))
         cts = np.array([int(r["timestamp(ns)"]) for r in cam_rows], dtype=np.int64)
 
+    tof_recs = tof_ts = None
+    if cfg.anchors.use_tof:
+        tof_recs = tof_reader.memmap(log_dir / "run" / "mpa" / cfg.anchors.tof_pipe)
+        tof_ts = np.asarray(tof_recs["timestamp_ns"], dtype=np.int64)
+
+    def _tof_at(t_ns: int):
+        if tof_recs is None:
+            return None
+        k = int(np.clip(np.searchsorted(tof_ts, t_ns), 1, len(tof_ts) - 1))
+        k = k - 1 if (t_ns - tof_ts[k - 1]) <= (tof_ts[k] - t_ns) else k
+        if abs(int(tof_ts[k]) - t_ns) > _TOF_TOL_NS:
+            return None
+        r = tof_recs[k]
+        return TofFrame(int(r["timestamp_ns"]),
+                        np.array(r["points"], np.float32),
+                        np.array(r["noises"], np.float32),
+                        np.array(r["conf"], np.uint8))
+
     def _nearest(t: int):
         j = int(np.clip(np.searchsorted(vt_s, t), 1, len(vt_s) - 1))
         p = j - 1 if (t - vt_s[j - 1]) <= (vt_s[j] - t) else j
@@ -142,4 +160,5 @@ def frames_with_depth(
                 if bgr is not None:
                     image = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
-        yield Frame(t_ns=t_ns, image=image, pose=pose, features=feats), disparity
+        yield Frame(t_ns=t_ns, image=image, pose=pose, features=feats,
+                    tof=_tof_at(t_ns)), disparity

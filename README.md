@@ -105,7 +105,8 @@ systemctl is-active mono_depth_rescaler
 ## Selected configuration
 
 - Default YAML profile: `qvio` (`qvio_extended`); switch to `openvins` in YAML for `ov_extended`
-- ToF cap 500; undistort `crop` by default (`stretch` keeps full FOV)
+- ToF anchors: image-space grid (`tof_cell_px=4`, nearest per cell); VIO uncapped
+- Undistort `crop` by default (`stretch` keeps full FOV)
 - Monotonic non-smoothing spline, 10 knots, uniform anchor weights
 - MAD outlier rejection (k=3.0); five-second calibration hold
 - VIO features used only when `v.state == VIO_STATE_OK` (qVIO and OpenVINS)

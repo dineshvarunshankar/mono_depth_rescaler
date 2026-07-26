@@ -77,6 +77,10 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
         anchors["tof_tolerance_ms"].as<int64_t>(250) * 1'000'000LL;
     c.anchors.feature_tol_ns =
         anchors["feature_tol_ms"].as<int64_t>(100) * 1'000'000LL;
+    c.anchors.tof_cell_px = anchors["tof_cell_px"].as<int>(4);
+    c.anchors.max_per_cell = anchors["max_per_cell"].as<int>(1);
+    c.anchors.tof_cell_pick = anchors["tof_cell_pick"].as<std::string>("nearest");
+    c.anchors.tof_trust_range_m = anchors["tof_trust_range_m"].as<float>(10.0f);
     c.anchors.tof_max_points =
         profile["tof_max_points"].as<int>();
     c.anchors.projection =
@@ -86,6 +90,8 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
         c.anchors.tof_confidence_min > 255 ||
         c.anchors.tof_tolerance_ns < 0 ||
         c.anchors.feature_tol_ns <= 0 ||
+        c.anchors.tof_cell_px < 0 || c.anchors.max_per_cell < 1 ||
+        c.anchors.tof_trust_range_m <= 0.0f ||
         c.anchors.projection != "world_pose") {
         throw std::runtime_error("profile requires ToF and world_pose projection");
     }
