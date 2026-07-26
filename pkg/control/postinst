@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+if [ -f "/sbin/ldconfig" ]; then
+	ldconfig
+fi
+
+set +e
+systemctl daemon-reload
+systemctl enable mono_depth_rescaler

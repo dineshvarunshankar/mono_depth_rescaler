@@ -27,25 +27,19 @@ compiler + VOXL SDK). Install both per ModalAI's
 voxl-docker -i voxl-cross                    # enter the build container
 ./install_build_deps.sh qrb5165 dev          # or qrb5165-2 for 2.x images
 ./build.sh qrb5165                           # ./build.sh native for host build + tests
+./make_package.sh                            # build the .deb (qrb5165 build only)
 ```
 
 ### 2. Install on the drone
 
-```bash
-adb push build/mono_depth_rescaler /usr/bin/
-adb push config/. /etc/mono_depth_rescaler/
-adb push services/mono_depth_rescaler.service /etc/systemd/system/
-adb shell mkdir -p /etc/systemd/system/voxl-tflite-server.service.d \
-  /etc/systemd/system/voxl-camera-server.service.d
-adb push services/voxl-tflite-server.service.d/partof-camera.conf \
-  /etc/systemd/system/voxl-tflite-server.service.d/
-adb push services/voxl-camera-server.service.d/wants-depth.conf \
-  /etc/systemd/system/voxl-camera-server.service.d/
+The `.deb` carries the binary, service + drop-ins, and config; its postinst runs
+`daemon-reload` and enables the service.
 
-adb shell
-systemctl daemon-reload
-systemctl enable --now mono_depth_rescaler
-systemctl status mono_depth_rescaler
+```bash
+adb push mono_depth_rescaler_0.1.0_arm64.deb /tmp/
+adb shell dpkg -i /tmp/mono_depth_rescaler_0.1.0_arm64.deb
+adb shell systemctl start mono_depth_rescaler
+adb shell systemctl status mono_depth_rescaler
 ```
 
 The service runs `/usr/bin/mono_depth_rescaler` with **no profile/fov flags**.
@@ -58,13 +52,6 @@ deployment:
 
 Also enable the matching VIO service (`voxl-qvio-server` or `voxl-open-vins-server`).
 `inference.fov` in the same YAML sets crop/stretch.
-
-Camera lifecycle recovery:
-- `PartOf=voxl-camera-server` on the rescaler and on tflite (drop-in) so both
-  restart when the camera server restarts.
-- Camera drop-in `Wants=` tflite + rescaler so starting camera brings them back.
-- The binary exits non-zero on disparity/VIO disconnect or failed pipe open so
-  `Restart=always` can recover sticky disconnects.
 
 For a temporary manual override (debug only), stop the service first:
 

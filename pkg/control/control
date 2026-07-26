@@ -1,0 +1,8 @@
+Package: mono_depth_rescaler
+Version: 0.1.0
+Section: base
+Priority: optional
+Architecture: arm64
+Depends: libmodal-pipe, libmodal-json
+Maintainer: dkandiya@andrew.cmu.edu
+Description: Rescale monocular disparity to metric depth on VOXL 2
