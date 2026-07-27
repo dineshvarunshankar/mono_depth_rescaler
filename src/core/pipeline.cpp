@@ -136,6 +136,8 @@ std::unique_ptr<RescaleResult> Pipeline::process(
         weights_d.push_back(1.0);
     }
 
+    _last_anchors = static_cast<int>(y.size());
+
     bool have_fresh = false;
     fits::Fit fresh;
     if (static_cast<int>(y.size()) >= r.min_anchors) {

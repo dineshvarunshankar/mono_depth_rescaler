@@ -1,6 +1,5 @@
 [Unit]
 Description=mono_depth_rescaler
-SourcePath=/usr/bin/mono_depth_rescaler
 After=voxl-wait-for-fs.service voxl-camera-server.service voxl-tflite-server.service voxl-qvio-server.service voxl-open-vins-server.service
 Wants=voxl-camera-server.service voxl-tflite-server.service
 PartOf=voxl-camera-server.service

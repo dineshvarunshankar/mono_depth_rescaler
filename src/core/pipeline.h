@@ -44,6 +44,9 @@ public:
     std::unique_ptr<RescaleResult> apply_held(
         int64_t frame_timestamp_ns, const std::vector<float>& disparity);
 
+    // Anchors the last process() call fed to the fit.
+    int last_anchor_count() const { return _last_anchors; }
+
 private:
     float sample_disparity(const std::vector<float>& disp, float u, float v) const;
     std::unique_ptr<RescaleResult> render(
@@ -56,4 +59,5 @@ private:
     fits::Fit                 _held;
     bool                      _has_held{false};
     int64_t                   _held_t_ns{0};
+    int                       _last_anchors{0};
 };
