@@ -36,8 +36,8 @@ The `.deb` carries the binary, service + drop-ins, and config; its postinst runs
 `daemon-reload` and enables the service.
 
 ```bash
-adb push mono_depth_rescaler_0.1.0_arm64.deb /tmp/
-adb shell dpkg -i /tmp/mono_depth_rescaler_0.1.0_arm64.deb
+adb push mono-depth-rescaler_0.1.0_arm64.deb /tmp/
+adb shell dpkg -i /tmp/mono-depth-rescaler_0.1.0_arm64.deb
 adb shell systemctl start mono_depth_rescaler
 adb shell systemctl status mono_depth_rescaler
 ```

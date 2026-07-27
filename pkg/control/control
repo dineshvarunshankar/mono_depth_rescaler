@@ -1,4 +1,4 @@
-Package: mono_depth_rescaler
+Package: mono-depth-rescaler
 Version: 0.1.0
 Section: base
 Priority: optional
