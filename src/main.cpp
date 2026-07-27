@@ -194,22 +194,9 @@ int run(const Arguments& args) {
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
 
-    if (!vio.start(vio_cb)) {
-        pipe_server_close(CH_OUT);
-        return 1;
-    }
-    if (!tof_source.start()) {
-        std::fprintf(
-            stderr,
-            "mono_depth_rescaler: warning: ToF unavailable at start; "
-            "continuing without ToF anchors\n");
-    }
-    if (!depth_source.start()) {
-        vio.stop();
-        tof_source.stop();
-        pipe_server_close(CH_OUT);
-        return 1;
-    }
+    bool vio_up  = vio.start(vio_cb);
+    bool tof_up  = tof_source.start();
+    bool disp_up = depth_source.start();
 
     std::printf(
         "profile=%s fov=%s vio=%s disparity=%s tof_cap=%d output=%s "
@@ -223,7 +210,13 @@ int run(const Arguments& args) {
     while (g_running) {
         struct timespec ts = {0, 50'000'000};
         nanosleep(&ts, nullptr);
-        if ((++ticks % 40) == 0) {  // ~2 s
+        ++ticks;
+        if ((ticks % 100) == 0) {  // ~5 s: retry pipes still down
+            if (!vio_up)  vio_up  = vio.start(vio_cb);
+            if (!tof_up)  tof_up  = tof_source.start();
+            if (!disp_up) disp_up = depth_source.start();
+        }
+        if ((ticks % 40) == 0) {  // ~2 s
             std::fprintf(
                 stderr,
                 "mono_depth_rescaler stats: disp_in=%llu pose_miss=%llu "

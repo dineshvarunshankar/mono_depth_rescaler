@@ -53,11 +53,11 @@ if(BUILD_VOXL_APP)
             mono_depth_rescaler PRIVATE -Wall -Wextra -Wpedantic)
         install(TARGETS mono_depth_rescaler DESTINATION /usr/bin)
         install(FILES services/mono_depth_rescaler.service
-                DESTINATION /etc/systemd/system)
+                DESTINATION /lib/systemd/system)
         install(FILES services/voxl-tflite-server.service.d/partof-camera.conf
-                DESTINATION /etc/systemd/system/voxl-tflite-server.service.d)
+                DESTINATION /lib/systemd/system/voxl-tflite-server.service.d)
         install(FILES services/voxl-camera-server.service.d/wants-depth.conf
-                DESTINATION /etc/systemd/system/voxl-camera-server.service.d)
+                DESTINATION /lib/systemd/system/voxl-camera-server.service.d)
     else()
         message(STATUS "ModalAI SDK not found; skipping VOXL executable")
     endif()
