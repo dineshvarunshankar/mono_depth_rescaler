@@ -14,4 +14,4 @@ rmdir /etc/systemd/system/voxl-tflite-server.service.d 2>/dev/null
 rmdir /etc/systemd/system/voxl-camera-server.service.d 2>/dev/null
 
 systemctl daemon-reload
-systemctl enable mono_depth_rescaler
+systemctl reenable mono_depth_rescaler
