@@ -14,6 +14,11 @@ mkdir -p "$DATA_DIR"
 # stage /usr/bin, /etc/systemd, /etc/mono_depth_rescaler via the CMake install rules
 sudo make -C build DESTDIR="$(pwd)/$DATA_DIR" install
 
+if [ ! -f "$DATA_DIR/usr/bin/mono_depth_rescaler" ]; then
+    echo "no binary staged; run ./install_build_deps.sh then ./build.sh qrb5165" >&2
+    exit 1
+fi
+
 mkdir -p "$DEB_DIR"
 cp -rf pkg/control "$DEB_DIR/DEBIAN"
 cp -rf "$DATA_DIR"/* "$DEB_DIR"

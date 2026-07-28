@@ -8,9 +8,7 @@ fi
 set +e
 # remove copies from the old /etc location
 rm -f /etc/systemd/system/mono_depth_rescaler.service
-rm -f /etc/systemd/system/voxl-tflite-server.service.d/partof-camera.conf
 rm -f /etc/systemd/system/voxl-camera-server.service.d/wants-depth.conf
-rmdir /etc/systemd/system/voxl-tflite-server.service.d 2>/dev/null
 rmdir /etc/systemd/system/voxl-camera-server.service.d 2>/dev/null
 
 systemctl daemon-reload
