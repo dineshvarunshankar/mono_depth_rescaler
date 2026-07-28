@@ -86,6 +86,7 @@ struct Stats {
     std::atomic<uint64_t> fit_fail{0};
     std::atomic<uint64_t> out_written{0};
     std::atomic<int>      anchors{0};   // last fitted frame
+    std::atomic<int>      vio{0}, tof{0};
 };
 
 int run(const Arguments& args) {
@@ -152,18 +153,11 @@ int run(const Arguments& args) {
                 frame.disparity);
             stats.anchors.store(
                 pipeline.last_anchor_count(), std::memory_order_relaxed);
+            int n_vio, n_tof;
+            pipeline.last_anchor_split(n_vio, n_tof);
+            stats.vio.store(n_vio, std::memory_order_relaxed);
+            stats.tof.store(n_tof, std::memory_order_relaxed);
             if (!result) {
-                double xl, xh, yl, yh;
-                pipeline.last_fit_ranges(xl, xh, yl, yh);
-                int nv, nff, ng, nk;
-                pipeline.last_anchor_split(nv, nff, ng, nk);
-                std::fprintf(
-                    stderr,
-                    "mono_depth_rescaler no output: why=%d anchors=%d "
-                    "vio=%d tof_fov=%d tof_gated=%d tof_kept=%d "
-                    "x=[%.4f %.4f] y=[%.4f %.4f]\n",
-                    pipeline.last_fit_reason(), pipeline.last_anchor_count(),
-                    nv, nff, ng, nk, xl, xh, yl, yh);
                 stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
@@ -232,7 +226,7 @@ int run(const Arguments& args) {
                 stderr,
                 "mono_depth_rescaler stats: disp_in=%llu pose_miss=%llu "
                 "vio_bad=%llu tof_miss=%llu fit_fail=%llu out=%llu "
-                "anchors=%d\n",
+                "anchors=%d vio=%d tof=%d\n",
                 static_cast<unsigned long long>(
                     stats.disp_in.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(
@@ -245,7 +239,9 @@ int run(const Arguments& args) {
                     stats.fit_fail.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(
                     stats.out_written.load(std::memory_order_relaxed)),
-                stats.anchors.load(std::memory_order_relaxed));
+                stats.anchors.load(std::memory_order_relaxed),
+                stats.vio.load(std::memory_order_relaxed),
+                stats.tof.load(std::memory_order_relaxed));
         }
     }
 

@@ -75,7 +75,7 @@ ProjectedAnchors Pipeline::build_anchors(
         _cfg.extr_hires.R, _cfg.extr_hires.T,
         _pre, _cfg.vio.min_quality);
     _n_vio = static_cast<int>(vio.depth.size());
-    _n_tof_fov = _n_tof_gated = _n_tof_kept = 0;
+    _n_tof = 0;
     if (!tof) {
         return vio;  // no ToF: keep all VIO
     }
@@ -89,8 +89,8 @@ ProjectedAnchors Pipeline::build_anchors(
         _cfg.extr_tof, _cfg.extr_hires, _pre,
         a.tof_confidence_min, cap);
 
-    _n_tof_fov = static_cast<int>(tof_a.depth.size());
     if (grid <= 0) {
+        _n_tof = static_cast<int>(tof_a.depth.size());
         append(vio, tof_a);  // no grid: union VIO + capped ToF
         return vio;
     }
@@ -101,12 +101,11 @@ ProjectedAnchors Pipeline::build_anchors(
         tof_a, r.anchor_depth_min,
         std::min(r.anchor_depth_max, a.tof_trust_range_m));
     _n_vio = static_cast<int>(v.depth.size());
-    _n_tof_gated = static_cast<int>(t.depth.size());
     std::vector<size_t> tk;
     grid_thin(t.u, t.v, t.depth, grid, a.max_per_cell,
               static_cast<float>(_pre.dst_w()), static_cast<float>(_pre.dst_h()),
               a.tof_cell_pick, tk);
-    _n_tof_kept = static_cast<int>(tk.size());
+    _n_tof = static_cast<int>(tk.size());
     ProjectedAnchors out = v;  // all VIO + thinned ToF
     append(out, gather(t, tk));
     if (out.depth.size() < static_cast<size_t>(r.min_anchors)) {
@@ -143,12 +142,6 @@ std::unique_ptr<RescaleResult> Pipeline::process(
     }
 
     _last_anchors = static_cast<int>(y.size());
-    if (!disp_rel.empty()) {
-        auto xr = std::minmax_element(disp_rel.begin(), disp_rel.end());
-        auto yr = std::minmax_element(y.begin(), y.end());
-        _last_x_lo = *xr.first; _last_x_hi = *xr.second;
-        _last_y_lo = *yr.first; _last_y_hi = *yr.second;
-    }
 
     bool have_fresh = false;
     fits::Fit fresh;
@@ -158,7 +151,6 @@ std::unique_ptr<RescaleResult> Pipeline::process(
             1, r.num_knots_spline, r.outlier_rejection, r.outlier_k,
             r.spline_kappa);
         have_fresh = fresh.valid;
-        _last_fit_reason = fresh.invalid_reason;
     }
 
     if (have_fresh) {

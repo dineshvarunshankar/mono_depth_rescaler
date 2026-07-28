@@ -15,12 +15,11 @@ struct Fit {
     std::vector<double> params_cov;          // n*n row-major; empty if unavailable
     bool  has_inliers{false};
     float inlier_ratio{1.0f};
-    int   invalid_reason{0};   // 0 ok, 1 flat x, 2 non-finite y, 3 non-monotonic
 };
 
 // Usable iff finite, positive, non-decreasing over [x_min, x_max].
 bool is_valid(const std::function<double(double)>& predict,
-              double x_min, double x_max, int n = 32, int* reason = nullptr);
+              double x_min, double x_max, int n = 32);
 
 // Fit `method` to (x, y, w); invalid Fit on too few points or solver failure.
 Fit create(const std::string& method,
