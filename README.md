@@ -32,7 +32,7 @@ voxl-docker -i voxl-cross                    # enter the build container
 
 ### 2. Install on the drone
 
-The `.deb` carries the binary, service + drop-ins, and config; its postinst runs
+The `.deb` carries the binary, service, camera drop-in, and config; its postinst runs
 `daemon-reload` and enables the service.
 
 ```bash
@@ -64,22 +64,12 @@ mono_depth_rescaler --profile openvins --fov crop
 
 Run `voxl-tflite-server` with a depth model publishing FLOAT32 disparity — the
 rescaler works with any (MiDaS, ZipDepth, …), it only reads the disparity pipe.
-[AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) §4.4 has the full patch
-guide. Starling 2 MiDaS example:
+See [AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) §4.4 for the
+tflite-server config and patch guide.
 
-`/etc/modalai/voxl-tflite-server.conf`:
-
-```
-model_architecture: MIDAS_V2
-delegate:           gpu
-allow_multiple:     false
-skip_frames:        0
-input_pipe:         /run/mpa/hires_small_color/
-```
-
-`/etc/voxl-tflite-server/undistort.yml`: `publish_image: 0`, `publish_disparity: 1`,
-`fov: crop`. Then `allow_multiple: false` → pipe `tflite_disparity` (rescaler
-default). Match `fov` and `inference.input_resolution` (256 for MiDaS) on both sides.
+Match on both sides: `allow_multiple: false` -> pipe `tflite_disparity` (rescaler
+default), `publish_disparity: 1`, and `fov` / `inference.input_resolution`
+(256 for MiDaS).
 
 ### 4. Verify
 
