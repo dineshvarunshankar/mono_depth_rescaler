@@ -155,12 +155,15 @@ int run(const Arguments& args) {
             if (!result) {
                 double xl, xh, yl, yh;
                 pipeline.last_fit_ranges(xl, xh, yl, yh);
+                int nv, nff, ng, nk;
+                pipeline.last_anchor_split(nv, nff, ng, nk);
                 std::fprintf(
                     stderr,
-                    "mono_depth_rescaler fit rejected: why=%d anchors=%d "
+                    "mono_depth_rescaler no output: why=%d anchors=%d "
+                    "vio=%d tof_fov=%d tof_gated=%d tof_kept=%d "
                     "x=[%.4f %.4f] y=[%.4f %.4f]\n",
                     pipeline.last_fit_reason(), pipeline.last_anchor_count(),
-                    xl, xh, yl, yh);
+                    nv, nff, ng, nk, xl, xh, yl, yh);
                 stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
                 return;
             }

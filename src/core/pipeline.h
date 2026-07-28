@@ -47,6 +47,14 @@ public:
     // Anchors the last process() call fed to the fit.
     int last_anchor_count() const { return _last_anchors; }
 
+    // Anchor counts from the last build_anchors: VIO kept, ToF in-FOV,
+    // ToF surviving the depth gate, ToF after grid thinning.
+    void last_anchor_split(int& vio, int& tof_fov, int& tof_gated,
+                           int& tof_kept) const {
+        vio = _n_vio; tof_fov = _n_tof_fov;
+        tof_gated = _n_tof_gated; tof_kept = _n_tof_kept;
+    }
+
     // Why the last fresh fit was rejected, and the ranges it was given.
     int last_fit_reason() const { return _last_fit_reason; }
     void last_fit_ranges(double& x_lo, double& x_hi,
@@ -69,6 +77,8 @@ private:
     int64_t                   _held_t_ns{0};
     int                       _last_anchors{0};
     int                       _last_fit_reason{0};
+    mutable int               _n_vio{0}, _n_tof_fov{0};
+    mutable int               _n_tof_gated{0}, _n_tof_kept{0};
     double                    _last_x_lo{0.0}, _last_x_hi{0.0};
     double                    _last_y_lo{0.0}, _last_y_hi{0.0};
 };
