@@ -153,6 +153,14 @@ int run(const Arguments& args) {
             stats.anchors.store(
                 pipeline.last_anchor_count(), std::memory_order_relaxed);
             if (!result) {
+                double xl, xh, yl, yh;
+                pipeline.last_fit_ranges(xl, xh, yl, yh);
+                std::fprintf(
+                    stderr,
+                    "mono_depth_rescaler fit rejected: why=%d anchors=%d "
+                    "x=[%.4f %.4f] y=[%.4f %.4f]\n",
+                    pipeline.last_fit_reason(), pipeline.last_anchor_count(),
+                    xl, xh, yl, yh);
                 stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
                 return;
             }

@@ -137,6 +137,12 @@ std::unique_ptr<RescaleResult> Pipeline::process(
     }
 
     _last_anchors = static_cast<int>(y.size());
+    if (!disp_rel.empty()) {
+        auto xr = std::minmax_element(disp_rel.begin(), disp_rel.end());
+        auto yr = std::minmax_element(y.begin(), y.end());
+        _last_x_lo = *xr.first; _last_x_hi = *xr.second;
+        _last_y_lo = *yr.first; _last_y_hi = *yr.second;
+    }
 
     bool have_fresh = false;
     fits::Fit fresh;
@@ -146,6 +152,7 @@ std::unique_ptr<RescaleResult> Pipeline::process(
             1, r.num_knots_spline, r.outlier_rejection, r.outlier_k,
             r.spline_kappa);
         have_fresh = fresh.valid;
+        _last_fit_reason = fresh.invalid_reason;
     }
 
     if (have_fresh) {

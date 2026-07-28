@@ -63,15 +63,17 @@ static double median_of(std::vector<double> v) {
 }
 
 bool is_valid(const std::function<double(double)>& predict,
-              double x_min, double x_max, int n) {
+              double x_min, double x_max, int n, int* reason) {
+    auto fail = [&](int r) { if (reason) *reason = r; return false; };
+    if (reason) *reason = 0;
     if (!std::isfinite(x_min) || !std::isfinite(x_max) || x_max <= x_min)
-        return false;
+        return fail(1);
     std::vector<double> y(n);
     double ymin = 1e300, ymax = -1e300;
     for (int i = 0; i < n; ++i) {
         double x = x_min + (x_max - x_min) * i / double(n - 1);
         double v = predict(x);
-        if (!std::isfinite(v) || v <= 0.0) return false;
+        if (!std::isfinite(v) || v <= 0.0) return fail(2);
         y[i] = v;
         ymin = std::min(ymin, v);
         ymax = std::max(ymax, v);
@@ -79,7 +81,7 @@ bool is_valid(const std::function<double(double)>& predict,
     // soft monotonicity penalties leave O(scale/kappa) leakage; relative tol
     double tol = -1e-6 * (ymax - ymin + 1e-12);
     for (int i = 1; i < n; ++i)
-        if (y[i] - y[i - 1] < tol) return false;
+        if (y[i] - y[i - 1] < tol) return fail(3);
     return true;
 }
 
@@ -138,7 +140,7 @@ static Fit fit_polynomial(const std::vector<double>& x, const std::vector<double
     Fit f;
     f.predict = predict;
     f.x_min = x_min; f.x_max = x_max;
-    f.valid = is_valid(predict, x_min, x_max);
+    f.valid = is_valid(predict, x_min, x_max, 32, &f.invalid_reason);
     f.params = coeffs;
     f.params_cov = cov;
     return f;
@@ -249,7 +251,7 @@ static Fit fit_polynomial_monotonic(const std::vector<double>& x,
     Fit f;
     f.predict = predict;
     f.x_min = x_min; f.x_max = x_max;
-    f.valid = is_valid(predict, x_min, x_max);
+    f.valid = is_valid(predict, x_min, x_max, 32, &f.invalid_reason);
     f.params = coeffs;
     f.params_cov = init.params_cov;   // unconstrained WLS cov (approximation)
     return f;
@@ -283,7 +285,7 @@ static Fit fit_exponential(const std::vector<double>& x, const std::vector<doubl
     Fit f;
     f.predict = predict;
     f.x_min = x_min; f.x_max = x_max;
-    f.valid = is_valid(predict, x_min, x_max);
+    f.valid = is_valid(predict, x_min, x_max, 32, &f.invalid_reason);
     f.params = params;
     f.params_cov = cov;
     return f;
@@ -461,7 +463,7 @@ static Fit fit_spline(const std::vector<double>& x, const std::vector<double>& y
     Fit f;
     f.predict = predict;
     f.x_min = x_min; f.x_max = x_max;
-    f.valid = is_valid(predict, x_min, x_max);
+    f.valid = is_valid(predict, x_min, x_max, 32, &f.invalid_reason);
     // params left empty: spline coeffs vary with knots
     return f;
 }

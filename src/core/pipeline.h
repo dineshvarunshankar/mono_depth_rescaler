@@ -47,6 +47,14 @@ public:
     // Anchors the last process() call fed to the fit.
     int last_anchor_count() const { return _last_anchors; }
 
+    // Why the last fresh fit was rejected, and the ranges it was given.
+    int last_fit_reason() const { return _last_fit_reason; }
+    void last_fit_ranges(double& x_lo, double& x_hi,
+                         double& y_lo, double& y_hi) const {
+        x_lo = _last_x_lo; x_hi = _last_x_hi;
+        y_lo = _last_y_lo; y_hi = _last_y_hi;
+    }
+
 private:
     float sample_disparity(const std::vector<float>& disp, float u, float v) const;
     std::unique_ptr<RescaleResult> render(
@@ -60,4 +68,7 @@ private:
     bool                      _has_held{false};
     int64_t                   _held_t_ns{0};
     int                       _last_anchors{0};
+    int                       _last_fit_reason{0};
+    double                    _last_x_lo{0.0}, _last_x_hi{0.0};
+    double                    _last_y_lo{0.0}, _last_y_hi{0.0};
 };
