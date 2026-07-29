@@ -234,19 +234,19 @@ void test_pipeline_union_and_hold() {
     tof.noise.assign(10, 0.02f);
     tof.confidence.assign(10, 255);
     ProjectedAnchors combined = pipeline.build_anchors(
-        packet, T, R, &tof, T, R);
+        packet, T, R, &tof);
     assert(combined.depth.size() == 8);
 
     auto fresh = pipeline.process(
-        1'000'000'000, packet, T, R, nullptr, T, R, disparity);
+        1'000'000'000, packet, T, R, nullptr, disparity);
     assert(fresh && !fresh->held && fresh->n_anchors == 5);
 
     ext_vio_data_t empty{};
     auto held = pipeline.process(
-        2'000'000'000, empty, T, R, nullptr, T, R, disparity);
+        2'000'000'000, empty, T, R, nullptr, disparity);
     assert(held && held->held);
     auto stale = pipeline.process(
-        8'000'000'000, empty, T, R, nullptr, T, R, disparity);
+        8'000'000'000, empty, T, R, nullptr, disparity);
     assert(!stale);
 }
 
@@ -274,7 +274,7 @@ void test_pipeline_grid_fusion() {
     tof.points.assign(10, TofPoint{0.0f, 0.0f, 2.5f});
     tof.noise.assign(10, 0.02f);
     tof.confidence.assign(10, 255);
-    ProjectedAnchors c = pipeline.build_anchors(packet, T, R, &tof, T, R);
+    ProjectedAnchors c = pipeline.build_anchors(packet, T, R, &tof);
 
     int n_tof = 0;
     for (float d : c.depth) {
@@ -288,13 +288,60 @@ void test_pipeline_grid_fusion() {
     Config cfg1 = synthetic_config();
     cfg1.anchors.tof_cell_px = 100;  // 1 cell (whole image)
     Pipeline p1(cfg1);
-    ProjectedAnchors c1 = p1.build_anchors(packet, T, R, &tof, T, R);
+    ProjectedAnchors c1 = p1.build_anchors(packet, T, R, &tof);
     int n_tof1 = 0;
     for (float d : c1.depth) {
         if (std::abs(d - 2.5f) < 1e-4f) ++n_tof1;
     }
     assert(n_tof1 == 1);
     assert(static_cast<int>(c1.depth.size()) - n_tof1 == 5);  // all VIO survive
+}
+
+void test_tof_only_without_vio() {
+    Config cfg = synthetic_config();
+    Pipeline pipeline(cfg);
+    float T[3], R[3][3];
+    identity_pose(T, R);
+
+    // spread across image cells so grid thinning keeps enough anchors to
+    // avoid the scarce fallback, which would change the count
+    TofFrame tof;
+    for (int i = 0; i < 30; ++i) {
+        const float x = -2.0f + i * (4.0f / 29.0f);
+        tof.points.push_back(TofPoint{x, 0.0f, 2.5f});
+    }
+    tof.noise.assign(30, 0.02f);
+    tof.confidence.assign(30, 255);
+
+    ext_vio_data_t with_vio{};
+    with_vio.n_total_features = 5;
+    with_vio.v.state = VIO_STATE_OK;
+    for (int i = 0; i < 5; ++i) {
+        const float depth = 1.0f + i;
+        with_vio.features[i].point_quality = VIO_POINT_HIGH;
+        with_vio.features[i].tsf[0] = (20 + i * 15 - 50.0f) * depth / 50.0f;
+        with_vio.features[i].tsf[1] = 0.0f;
+        with_vio.features[i].tsf[2] = depth;
+    }
+
+    // no VIO packet at all: ToF alone must still produce anchors
+    const ext_vio_data_t no_vio{};
+    ProjectedAnchors tof_only = pipeline.build_anchors(no_vio, T, R, &tof);
+    assert(!tof_only.depth.empty());
+    for (float d : tof_only.depth) {
+        assert(std::abs(d - 2.5f) < 1e-4f);   // every anchor came from ToF
+    }
+
+    // ToF is rigid to the camera, so VIO presence must not move ToF anchors
+    ProjectedAnchors both = pipeline.build_anchors(with_vio, T, R, &tof);
+    int n_tof = 0;
+    for (float d : both.depth) {
+        if (std::abs(d - 2.5f) < 1e-4f) ++n_tof;
+    }
+    assert(n_tof == static_cast<int>(tof_only.depth.size()));
+
+    // no VIO and no ToF: nothing to anchor with
+    assert(pipeline.build_anchors(no_vio, T, R, nullptr).depth.empty());
 }
 
 void test_image_packet() {
@@ -356,6 +403,7 @@ int main() {
     test_spline();
     test_pipeline_union_and_hold();
     test_pipeline_grid_fusion();
+    test_tof_only_without_vio();
     test_image_packet();
     std::cout << "rescaler_core_tests passed\n";
     return 0;

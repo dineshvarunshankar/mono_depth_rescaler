@@ -69,13 +69,12 @@ def frames(
     for row, p, gap in zip(cam_rows, pick, gaps):
         if gap > tol_ns:
             continue
-        # unpack the (cheap) VIO packet first and skip invalid-pose frames before
-        # decoding the JPG -- a frame with no valid pose produces no anchors, and
-        # decoding it anyway (e.g. qVIO, valid only briefly) wastes most of the run
+        # invalid poses are kept: the deploy sees every disparity frame and
+        # falls back to ToF-only anchors
         t_pkt, pose, feats = ext_vio.unpack(recs[order[p]])
-        if not pose.valid:
-            continue
-        pose = ext_vio.propagate(pose, (int(row["timestamp(ns)"]) - t_pkt) * 1e-9)
+        if pose.valid:
+            pose = ext_vio.propagate(
+                pose, (int(row["timestamp(ns)"]) - t_pkt) * 1e-9)
         bgr = cv2.imread(str(cam_dir / f"{int(row['i']):05d}.jpg"))
         if bgr is None:
             continue

@@ -64,3 +64,39 @@ def test_spatial_subsample_is_deterministic_and_spread():
     selected = uv[a]
     assert np.ptp(selected[:, 0]) >= 8
     assert np.ptp(selected[:, 1]) >= 8
+
+
+def _invalid_pose_frame(n=30):
+    """qVIO zeroes R when tracking fails, so the pose cannot place anchors."""
+    frame = _frame(True, n)
+    frame.pose = VioPose(R_imu_to_vio=np.zeros((3, 3)),
+                         T_imu_wrt_vio=np.zeros(3))
+    return frame
+
+
+def test_tof_only_anchors_when_pose_invalid():
+    cfg = load()
+    cfg.rescale.min_anchors = 5
+    out = Pipeline(cfg).anchors(_invalid_pose_frame(), _disp(cfg))
+    assert out is not None, "ToF alone should still anchor without a pose"
+    disp_rel, depth, weights = out
+    assert len(depth) >= 5
+    assert np.all(np.isfinite(depth)) and np.all(depth > 0)
+
+
+def test_tof_only_matches_valid_pose_projection():
+    """ToF is rigid to the camera: an unusable pose must not move the anchors."""
+    cfg = load()
+    cfg.rescale.min_anchors = 5
+    pipe = Pipeline(cfg)
+    with_pose = pipe.anchors(_frame(True), _disp(cfg))
+    without = pipe.anchors(_invalid_pose_frame(), _disp(cfg))
+    assert with_pose is not None and without is not None
+    np.testing.assert_allclose(with_pose[1], without[1])
+
+
+def test_tof_only_yields_nothing_without_tof():
+    cfg = load()
+    frame = _invalid_pose_frame()
+    frame.tof = None
+    assert Pipeline(cfg).anchors(frame, _disp(cfg)) is None

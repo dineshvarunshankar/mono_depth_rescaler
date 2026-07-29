@@ -67,9 +67,7 @@ ProjectedAnchors Pipeline::build_anchors(
     const ext_vio_data_t& pkt,
     const float T_imu_image_wrt_vio[3],
     const float R_imu_image_to_vio[3][3],
-    const TofFrame* tof,
-    const float T_imu_tof_wrt_vio[3],
-    const float R_imu_tof_to_vio[3][3]) const {
+    const TofFrame* tof) const {
     ProjectedAnchors vio = project_features(
         pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
         _cfg.extr_hires.R, _cfg.extr_hires.T,
@@ -87,7 +85,7 @@ ProjectedAnchors Pipeline::build_anchors(
         : 0;
     const int cap = grid > 0 ? 0 : a.tof_max_points;
     ProjectedAnchors tof_a = project_tof_anchors(
-        *tof, T_imu_tof_wrt_vio, R_imu_tof_to_vio,
+        *tof, T_imu_image_wrt_vio, R_imu_image_to_vio,
         T_imu_image_wrt_vio, R_imu_image_to_vio,
         _cfg.extr_tof, _cfg.extr_hires, _pre,
         a.tof_confidence_min, cap);
@@ -124,8 +122,6 @@ std::unique_ptr<RescaleResult> Pipeline::process(
     const float T_imu_image_wrt_vio[3],
     const float R_imu_image_to_vio[3][3],
     const TofFrame* tof,
-    const float T_imu_tof_wrt_vio[3],
-    const float R_imu_tof_to_vio[3][3],
     const std::vector<float>& disparity) {
     const auto& r = _cfg.rescale;
     if (disparity.size() !=
@@ -133,8 +129,7 @@ std::unique_ptr<RescaleResult> Pipeline::process(
         return nullptr;
     }
     ProjectedAnchors a = build_anchors(
-        pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
-        tof, T_imu_tof_wrt_vio, R_imu_tof_to_vio);
+        pkt, T_imu_image_wrt_vio, R_imu_image_to_vio, tof);
 
     std::vector<double> disp_rel, y, weights_d;
     for (size_t i = 0; i < a.depth.size(); ++i) {

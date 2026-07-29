@@ -4,7 +4,7 @@ from typing import Optional
 import numpy as np
 
 from ..config import Config
-from .types import Frame, RescaleResult
+from .types import Frame, RescaleResult, VioPose
 from .camera_model import CameraModel
 from .preprocess import Preprocessor
 from .geometry import project_features, compute_weights, project_features_tracking_extrinsic
@@ -151,7 +151,17 @@ class Pipeline:
         set from RescaleResult.anchors instead of calling this again.
         """
         r = self.cfg.rescale
-        if self.cfg.anchors.projection == "tracking_extrinsic":
+        # No usable pose: VIO features cannot be placed, so anchor from ToF
+        # alone. Identity leaves tof_anchors with the fixed extrinsic; the
+        # invalid pose would not cancel (qVIO zeroes R on tracking loss).
+        pose = frame.pose if frame.pose.valid else VioPose(
+            np.eye(3), np.zeros(3))
+        if not frame.pose.valid:
+            uv = np.empty((0, 2))
+            depth = np.empty(0)
+            var = np.empty(0)
+            idx = np.empty(0, dtype=int)
+        elif self.cfg.anchors.projection == "tracking_extrinsic":
             uv, depth, var, idx = project_features_tracking_extrinsic(
                 frame.features, self._track_cams, self._track_extrs,
                 self.R_cam, self.T_cam, self.pre,
@@ -176,7 +186,7 @@ class Pipeline:
             grid = round(self.pre.dst_w / a.tof_cell_px) if a.tof_cell_px > 0 else 0
             cap = 0 if grid > 0 else a.tof_max_points
             uv_t, depth_t, var_t = tof_anchors(
-                frame.tof, frame.pose, frame.pose,
+                frame.tof, pose, pose,
                 self.R_tof, self.T_tof, self.R_cam, self.T_cam,
                 self.pre, a.tof_confidence_min, cap)
             keep_t = (depth_t >= r.anchor_depth_min) & (depth_t <= r.anchor_depth_max)

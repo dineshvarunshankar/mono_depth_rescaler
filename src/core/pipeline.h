@@ -22,13 +22,13 @@ class Pipeline {
 public:
     explicit Pipeline(const Config& cfg);
 
+    // ToF is rigid to the camera, so it needs no pose: the image pose is used
+    // on both sides of the world hop, leaving the fixed ToF->hires extrinsic.
     ProjectedAnchors build_anchors(
         const ext_vio_data_t& vio_pkt,
         const float T_imu_image_wrt_vio[3],
         const float R_imu_image_to_vio[3][3],
-        const TofFrame* tof,
-        const float T_imu_tof_wrt_vio[3],
-        const float R_imu_tof_to_vio[3][3]) const;
+        const TofFrame* tof) const;
 
     std::unique_ptr<RescaleResult> process(
         int64_t frame_timestamp_ns,
@@ -36,8 +36,6 @@ public:
         const float T_imu_image_wrt_vio[3],
         const float R_imu_image_to_vio[3][3],
         const TofFrame* tof,
-        const float T_imu_tof_wrt_vio[3],
-        const float R_imu_tof_to_vio[3][3],
         const std::vector<float>& disparity);
 
     // Rescale from the held fit; nullptr if none or aged past max_hold_age_ns.

@@ -134,20 +134,19 @@ int run(const Arguments& args) {
             stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
         }
 
-        // ToF is rigid to the camera, so the same pose on both sides leaves the
-        // fixed extrinsic. Without VIO, anchor from ToF alone.
+        // Without VIO, anchor from ToF alone.
         std::unique_ptr<RescaleResult> result;
         if (vio_ok) {
             result = pipeline.process(
                 image_time, vio_pkt, image_T, image_R, tof.get(),
-                image_T, image_R, frame.disparity);
+                frame.disparity);
         } else {
             const ext_vio_data_t no_vio{};
             const float T0[3] = {0.0f, 0.0f, 0.0f};
             const float R0[3][3] = {
                 {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
             result = pipeline.process(
-                image_time, no_vio, T0, R0, tof.get(), T0, R0, frame.disparity);
+                image_time, no_vio, T0, R0, tof.get(), frame.disparity);
         }
         stats.anchors.store(
             pipeline.last_anchor_count(), std::memory_order_relaxed);
