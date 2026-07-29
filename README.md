@@ -32,7 +32,7 @@ voxl-docker -i voxl-cross                    # enter the build container
 
 ### 2. Install on the drone
 
-The `.deb` carries the binary, service, camera drop-in, and config; its postinst runs
+The `.deb` carries the binary, service, and config; its postinst runs
 `daemon-reload` and enables the service.
 
 ```bash
