@@ -121,48 +121,42 @@ int run(const Arguments& args) {
         const bool have_pose = pose_buf.get(
             image_time, cfg.anchors.feature_tol_ns, vio_pkt, image_T, image_R);
 
-        // No valid pose: rescale from the held fit.
-        std::unique_ptr<RescaleResult> result;
+        const bool vio_ok = have_pose && vio_pkt.v.state == VIO_STATE_OK;
         if (!have_pose) {
             stats.pose_miss.fetch_add(1, std::memory_order_relaxed);
-            result = pipeline.apply_held(image_time, frame.disparity);
-        } else if (vio_pkt.v.state != VIO_STATE_OK) {
+        } else if (!vio_ok) {
             stats.vio_bad_state.fetch_add(1, std::memory_order_relaxed);
-            result = pipeline.apply_held(image_time, frame.disparity);
-        } else {
-            std::shared_ptr<const TofFrame> tof = tof_source.nearest(
-                image_time, cfg.anchors.tof_tolerance_ns);
-            float tof_T[3] = {0.0f, 0.0f, 0.0f};
-            float tof_R[3][3] = {
-                {1.0f, 0.0f, 0.0f},
-                {0.0f, 1.0f, 0.0f},
-                {0.0f, 0.0f, 1.0f}};
-            if (tof) {
-                if (!pose_buf.get_pose(
-                        tof->timestamp_ns, cfg.anchors.feature_tol_ns,
-                        tof_T, tof_R)) {
-                    tof.reset();
-                    stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
-                }
-            } else {
-                stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
-            }
-
-            result = pipeline.process(
-                image_time, vio_pkt, image_T, image_R, tof.get(), tof_T, tof_R,
-                frame.disparity);
-            stats.anchors.store(
-                pipeline.last_anchor_count(), std::memory_order_relaxed);
-            int n_vio, n_tof;
-            pipeline.last_anchor_split(n_vio, n_tof);
-            stats.vio.store(n_vio, std::memory_order_relaxed);
-            stats.tof.store(n_tof, std::memory_order_relaxed);
-            if (!result) {
-                stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
-                return;
-            }
         }
+
+        std::shared_ptr<const TofFrame> tof = tof_source.nearest(
+            image_time, cfg.anchors.tof_tolerance_ns);
+        if (!tof) {
+            stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        // ToF is rigid to the camera, so the same pose on both sides leaves the
+        // fixed extrinsic. Without VIO, anchor from ToF alone.
+        std::unique_ptr<RescaleResult> result;
+        if (vio_ok) {
+            result = pipeline.process(
+                image_time, vio_pkt, image_T, image_R, tof.get(),
+                image_T, image_R, frame.disparity);
+        } else {
+            const ext_vio_data_t no_vio{};
+            const float T0[3] = {0.0f, 0.0f, 0.0f};
+            const float R0[3][3] = {
+                {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+            result = pipeline.process(
+                image_time, no_vio, T0, R0, tof.get(), T0, R0, frame.disparity);
+        }
+        stats.anchors.store(
+            pipeline.last_anchor_count(), std::memory_order_relaxed);
+        int n_vio, n_tof;
+        pipeline.last_anchor_split(n_vio, n_tof);
+        stats.vio.store(n_vio, std::memory_order_relaxed);
+        stats.tof.store(n_tof, std::memory_order_relaxed);
         if (!result) {
+            stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
             return;
         }
         fill_float_image_packet(

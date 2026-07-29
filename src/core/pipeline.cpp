@@ -81,7 +81,10 @@ ProjectedAnchors Pipeline::build_anchors(
     }
 
     const auto& a = _cfg.anchors;
-    const int grid = a.tof_cell_px > 0 ? _pre.dst_w() / a.tof_cell_px : 0;
+    const int grid = a.tof_cell_px > 0
+        ? static_cast<int>(std::lround(
+              static_cast<double>(_pre.dst_w()) / a.tof_cell_px))
+        : 0;
     const int cap = grid > 0 ? 0 : a.tof_max_points;
     ProjectedAnchors tof_a = project_tof_anchors(
         *tof, T_imu_tof_wrt_vio, R_imu_tof_to_vio,

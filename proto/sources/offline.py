@@ -19,9 +19,6 @@ from . import tof as tof_reader
 from ..config import Config
 from ..rescaler.types import Frame, TofFrame
 
-# ToF<->hires pairing tolerates a wider offset than the hires<->VIO sync
-_TOF_TOL_NS = 200_000_000  # 200 ms
-
 
 def frames(
     cfg: Config,
@@ -49,12 +46,14 @@ def frames(
         tof_recs = tof_reader.memmap(log_dir / "run" / "mpa" / cfg.anchors.tof_pipe)
         tof_ts = np.asarray(tof_recs["timestamp_ns"], dtype=np.int64)
 
+    tof_tol_ns = cfg.anchors.tof_tolerance_ms * 1_000_000
+
     def _tof_at(t_ns: int):
         if tof_recs is None:
             return None
         k = int(np.clip(np.searchsorted(tof_ts, t_ns), 1, len(tof_ts) - 1))
         k = k - 1 if (t_ns - tof_ts[k - 1]) <= (tof_ts[k] - t_ns) else k
-        if abs(int(tof_ts[k]) - t_ns) > _TOF_TOL_NS:
+        if abs(int(tof_ts[k]) - t_ns) > tof_tol_ns:
             return None
         r = tof_recs[k]
         return TofFrame(int(r["timestamp_ns"]),
@@ -126,12 +125,14 @@ def frames_with_depth(
         tof_recs = tof_reader.memmap(log_dir / "run" / "mpa" / cfg.anchors.tof_pipe)
         tof_ts = np.asarray(tof_recs["timestamp_ns"], dtype=np.int64)
 
+    tof_tol_ns = cfg.anchors.tof_tolerance_ms * 1_000_000
+
     def _tof_at(t_ns: int):
         if tof_recs is None:
             return None
         k = int(np.clip(np.searchsorted(tof_ts, t_ns), 1, len(tof_ts) - 1))
         k = k - 1 if (t_ns - tof_ts[k - 1]) <= (tof_ts[k] - t_ns) else k
-        if abs(int(tof_ts[k]) - t_ns) > _TOF_TOL_NS:
+        if abs(int(tof_ts[k]) - t_ns) > tof_tol_ns:
             return None
         r = tof_recs[k]
         return TofFrame(int(r["timestamp_ns"]),

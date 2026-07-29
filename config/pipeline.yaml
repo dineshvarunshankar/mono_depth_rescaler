@@ -40,7 +40,7 @@ anchors:
   use_tof: true
   tof_pipe: tof
   tof_confidence_min: 128   # conf is binary (0/255)
-  tof_tolerance_ms: 250
+  tof_tolerance_ms: 100
   feature_tol_ms: 100       # max VIO-pose age when matching a frame/ToF timestamp
   tof_cell_px: 4            # ToF grid cell size in px; 0 = no grid
   max_per_cell: 1           # ToF anchors kept per cell (K)
