@@ -64,9 +64,10 @@ void test_profiles() {
     Config defaults = Config::from_yaml(
         root + "/config/pipeline.yaml", root + "/config/intrinsics",
         root + "/config/extrinsics/starling2.yaml");
-    assert(defaults.profile == "qvio");
-    assert(defaults.vio.pipe == "qvio_extended");
+    assert(defaults.profile == "openvins");
+    assert(defaults.vio.pipe == "ov_extended");
     assert(defaults.anchors.tof_max_points == 500);
+    assert(defaults.inference.camera == "hires");
 
     Config openvins = Config::from_yaml(
         root + "/config/pipeline.yaml", root + "/config/intrinsics",
@@ -394,6 +395,56 @@ void test_grid_thin() {
     assert(tk.size() == 1 && tk[0] == 0);
 }
 
+
+void test_native_anchors_use_pix_loc() {
+    Config cfg = synthetic_config();
+    CameraModel camera(
+        cfg.hires.fx, cfg.hires.fy, cfg.hires.cx, cfg.hires.cy,
+        cfg.hires.distortion, cfg.hires.distortion_model);
+    Preprocessor pre(camera, 100, 100, 100, 100, "raw", "crop", false);
+
+    ext_vio_data_t pkt{};
+    pkt.v.state = VIO_STATE_OK;
+    pkt.n_total_features = 2;
+    pkt.features[0].cam_id = 0;
+    pkt.features[0].point_quality = VIO_POINT_HIGH;
+    pkt.features[0].depth = 3.0f;
+    pkt.features[0].pix_loc[0] = 50.0f;
+    pkt.features[0].pix_loc[1] = 50.0f;
+    pkt.features[1].cam_id = 1;          // a different camera; must be skipped
+    pkt.features[1].point_quality = VIO_POINT_HIGH;
+    pkt.features[1].depth = 4.0f;
+    pkt.features[1].pix_loc[0] = 20.0f;
+    pkt.features[1].pix_loc[1] = 20.0f;
+
+    float T[3], R[3][3];
+    identity_pose(T, R);
+    ProjectedAnchors a = project_features_native(
+        pkt, 0, camera, pre, T, R, cfg.extr_hires.R, cfg.extr_hires.T,
+        true, 1);
+
+    assert(a.depth.size() == 1);
+    assert(std::abs(a.u[0] - 50.0f) < 1e-3f);
+    assert(std::abs(a.v[0] - 50.0f) < 1e-3f);
+    assert(std::abs(a.depth[0] - 3.0f) < 1e-5f);
+}
+
+
+void test_needs_pose_contract() {
+    Config cfg = synthetic_config();
+    assert(Pipeline(cfg).needs_pose());          // hires reprojects
+
+    cfg.inference.camera = "tracking_front";
+    cfg.tracking_front = cfg.hires;
+    cfg.extr_tracking_front = cfg.extr_hires;
+    cfg.has_tracking_front = true;
+
+    cfg.profile = "qvio";
+    assert(!Pipeline(cfg).needs_pose());         // pix_loc + packet depth
+    cfg.profile = "openvins";
+    assert(Pipeline(cfg).needs_pose());          // depth converted from tsf
+}
+
 int main() {
     test_grid_thin();
     test_profiles();
@@ -405,6 +456,8 @@ int main() {
     test_pipeline_grid_fusion();
     test_tof_only_without_vio();
     test_image_packet();
+    test_native_anchors_use_pix_loc();
+    test_needs_pose_contract();
     std::cout << "rescaler_core_tests passed\n";
     return 0;
 }

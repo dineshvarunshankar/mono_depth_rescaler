@@ -54,3 +54,15 @@ bool CameraModel::project_distorted(float x, float y, float z, float& u, float& 
     v = pts2d[0].y;
     return true;
 }
+
+void CameraModel::unproject(float u, float v, float& nx, float& ny) const {
+    const std::vector<cv::Point2f> src{cv::Point2f(u, v)};
+    std::vector<cv::Point2f> dst;
+    if (_model == "fisheye") {
+        cv::fisheye::undistortPoints(src, dst, _K, _D);
+    } else {
+        cv::undistortPoints(src, dst, _K, _D);
+    }
+    nx = dst[0].x;
+    ny = dst[0].y;
+}

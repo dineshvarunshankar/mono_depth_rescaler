@@ -56,6 +56,7 @@ class InferenceCfg:
     preprocess: str      # raw | undistort
     fov: str             # crop | fit | stretch  (undistort only)
     antialias: bool
+    camera: str = "hires"    # hires | tracking_front | tracking_down
 
 
 @dataclass
@@ -193,6 +194,8 @@ def load(
         raise ValueError(f"unknown deployment profile: {selected_profile}")
     v = profiles[selected_profile]
     inf = p["inference"]
+    if inf["camera"] not in ("hires", "tracking_front", "tracking_down"):
+        raise ValueError(f"unknown inference camera: {inf['camera']}")
     r = p["rescale"]
     s = p.get("smoother", {})
     m = p.get("modules", {})
@@ -221,6 +224,7 @@ def load(
         ),
         inference=InferenceCfg(
             source="mpa_pipe",
+            camera=inf["camera"],
             mpa_pipe_name=inf["mpa_pipe_name"],
             model_path="models/midas-tflite-w8a8/midas.tflite",
             backend_delegate="cpu",

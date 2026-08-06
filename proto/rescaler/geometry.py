@@ -79,6 +79,68 @@ def project_features(
     return np.stack([u[keep], v[keep]], axis=1), depth[keep], var[keep], sel[keep]
 
 
+def project_features_native(
+    features: list[Feature],
+    cam_id: int,
+    cam,                        # CameraModel of the observing camera
+    pre: Preprocessor,
+    pose: VioPose,
+    R_cam_to_imu: np.ndarray,   # (3, 3)
+    T_cam_wrt_imu: np.ndarray,  # (3,)
+    depth_from: str,            # feature | pose
+    min_quality: int = 1,
+    weighting: str = "none",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Anchors in the camera that observed them; pix_loc needs no reprojection.
+
+    depth_from: "feature" reads the packet's depth field (qVIO fills it,
+    OpenVINS does not); "pose" takes Z in the camera frame from xyz_vio.
+    Returns (uv, depth, var, idx) like project_features.
+    """
+    if depth_from not in ("feature", "pose"):
+        raise ValueError('depth_from must be "feature" or "pose"')
+    if weighting == "covariance":
+        raise ValueError("covariance weighting needs the world-pose projection")
+
+    sel = np.array([
+        i for i, f in enumerate(features)
+        if f.cam_id == cam_id
+        and f.quality >= min_quality
+        and f.pix_loc is not None
+        and (depth_from == "pose" or f.depth > 0)
+        and (weighting != "stddev" or f.depth_stddev > 0)
+    ], dtype=int)
+    if len(sel) == 0:
+        return np.empty((0, 2)), np.empty(0), np.empty(0), sel
+
+    feats = [features[i] for i in sel]
+    pts = np.array([f.pix_loc for f in feats], np.float64).reshape(-1, 1, 2)
+    if cam.model == "fisheye":
+        norm = cv2.fisheye.undistortPoints(pts, cam.K, cam.D)
+    else:
+        norm = cv2.undistortPoints(pts, cam.K, cam.D)
+    norm = norm.reshape(-1, 2)
+
+    if depth_from == "feature":
+        depth = np.array([f.depth for f in feats])
+    else:
+        P_vio = np.stack([f.xyz_vio for f in feats])
+        P_imu = (P_vio - pose.T_imu_wrt_vio) @ pose.R_imu_to_vio
+        depth = ((P_imu - T_cam_wrt_imu) @ R_cam_to_imu)[:, 2]
+
+    P_cam = np.column_stack([norm[:, 0] * depth, norm[:, 1] * depth, depth])
+    u, v, front = pre.project(P_cam)
+
+    var = (np.array([f.depth_stddev for f in feats]) ** 2
+           if weighting == "stddev" else np.ones(len(feats)))
+
+    keep = (
+        front & (depth > 0) & (var > 0)
+        & (u >= 0) & (u < pre.dst_w) & (v >= 0) & (v < pre.dst_h)
+    )
+    return np.stack([u[keep], v[keep]], axis=1), depth[keep], var[keep], sel[keep]
+
+
 def compute_weights(depth: np.ndarray, var: np.ndarray, weighting: str) -> np.ndarray:
     """Inverse-variance weights for fitting metric disparity y = 1/d.
 

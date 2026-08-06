@@ -134,7 +134,7 @@ int run(const Arguments& args) {
             stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
         }
 
-        // Without VIO, anchor from ToF alone.
+        // Without VIO: keep the features when they need no pose, else ToF alone.
         std::unique_ptr<RescaleResult> result;
         if (vio_ok) {
             result = pipeline.process(
@@ -146,7 +146,8 @@ int run(const Arguments& args) {
             const float R0[3][3] = {
                 {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
             result = pipeline.process(
-                image_time, no_vio, T0, R0, tof.get(), frame.disparity);
+                image_time, pipeline.needs_pose() ? no_vio : vio_pkt,
+                T0, R0, tof.get(), frame.disparity);
         }
         stats.anchors.store(
             pipeline.last_anchor_count(), std::memory_order_relaxed);

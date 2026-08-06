@@ -10,6 +10,7 @@ struct VioConfig {
 };
 
 struct InferenceConfig {
+    std::string camera{"hires"};   // hires | tracking_front | tracking_down
     std::string mpa_pipe_name;
     int         input_w{256}, input_h{256};
     std::string preprocess{"undistort"};
@@ -71,6 +72,13 @@ struct Config {
     IntrinsicsConfig hires;
     ExtrinsicsConfig extr_hires;
     ExtrinsicsConfig extr_tof;
+    // present only when the matching intrinsics file and extrinsics entry exist
+    IntrinsicsConfig tracking_front;
+    IntrinsicsConfig tracking_down;
+    ExtrinsicsConfig extr_tracking_front;
+    ExtrinsicsConfig extr_tracking_down;
+    bool             has_tracking_front{false};
+    bool             has_tracking_down{false};
     OutputConfig     output;
 
     static Config from_yaml(const std::string& pipeline_yaml,

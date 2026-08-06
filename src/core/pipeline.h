@@ -45,6 +45,11 @@ public:
     // Anchors the last process() call fed to the fit.
     int last_anchor_count() const { return _last_anchors; }
 
+    // false when anchors come from pix_loc and the packet's depth field
+    bool needs_pose() const {
+        return !(_native_cam_id >= 0 && _depth_from_feature);
+    }
+
     // Anchors each source contributed to the last build_anchors.
     void last_anchor_split(int& vio, int& tof) const {
         vio = _n_vio; tof = _n_tof;
@@ -59,6 +64,10 @@ private:
     const Config&             _cfg;
     CameraModel               _camera;
     Preprocessor              _pre;
+    // -1 = hires, reproject through the pose; else the observing camera's id
+    int                       _native_cam_id{-1};
+    bool                      _depth_from_feature{false};
+    ExtrinsicsConfig          _extr_cam;
     fits::Fit                 _held;
     bool                      _has_held{false};
     int64_t                   _held_t_ns{0};

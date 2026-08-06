@@ -2,9 +2,29 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <filesystem>
 #include <stdexcept>
 
 namespace {
+void load_intrinsics(const std::string& path, IntrinsicsConfig& out) {
+    const YAML::Node n = YAML::LoadFile(path);
+    out.width  = n["width"].as<int>();
+    out.height = n["height"].as<int>();
+    out.fx     = n["fx"].as<float>();
+    out.fy     = n["fy"].as<float>();
+    out.cx     = n["cx"].as<float>();
+    out.cy     = n["cy"].as<float>();
+    out.distortion_model = n["distortion_model"].as<std::string>("pinhole");
+    const YAML::Node dist = n["distortion"];
+    out.distortion.fill(0.0f);
+    for (int i = 0;
+         i < static_cast<int>(out.distortion.size()) &&
+         i < static_cast<int>(dist.size());
+         ++i) {
+        out.distortion[i] = dist[i].as<float>();
+    }
+}
+
 void load_extrinsics(
     const YAML::Node& root, const std::string& name, ExtrinsicsConfig& out) {
     const YAML::Node node = root[name];
@@ -26,6 +46,17 @@ void load_extrinsics(
         }
         out.T[i] = translation[i].as<float>();
     }
+}
+
+bool load_optional_camera(const std::string& intrinsics_path,
+                          const YAML::Node& extrinsics, const std::string& name,
+                          IntrinsicsConfig& intr, ExtrinsicsConfig& extr) {
+    if (!std::filesystem::exists(intrinsics_path) || !extrinsics[name]) {
+        return false;
+    }
+    load_intrinsics(intrinsics_path, intr);
+    load_extrinsics(extrinsics, name, extr);
+    return true;
 }
 }
 
@@ -61,6 +92,12 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
         ? inference["fov"].as<std::string>("crop")
         : fov_override;
     c.inference.antialias = inference["antialias"].as<bool>(false);
+    c.inference.camera = inference["camera"].as<std::string>("hires");
+    if (c.inference.camera != "hires" &&
+        c.inference.camera != "tracking_front" &&
+        c.inference.camera != "tracking_down") {
+        throw std::runtime_error("unknown inference camera: " + c.inference.camera);
+    }
     if (c.inference.input_w <= 0 || c.inference.input_h <= 0 ||
         c.inference.preprocess != "undistort" ||
         (c.inference.fov != "crop" && c.inference.fov != "stretch")) {
@@ -131,26 +168,23 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
     c.output.pipe =
         pipeline["output"]["pipe"].as<std::string>("metric_depth");
 
-    const YAML::Node intr = YAML::LoadFile(intrinsics_dir + "/hires.yaml");
-    c.hires.width  = intr["width"].as<int>();
-    c.hires.height = intr["height"].as<int>();
-    c.hires.fx     = intr["fx"].as<float>();
-    c.hires.fy     = intr["fy"].as<float>();
-    c.hires.cx     = intr["cx"].as<float>();
-    c.hires.cy     = intr["cy"].as<float>();
-    c.hires.distortion_model = intr["distortion_model"].as<std::string>("pinhole");
-    auto dist = intr["distortion"];
-    c.hires.distortion.fill(0.0f);
-    for (int i = 0;
-         i < static_cast<int>(c.hires.distortion.size()) &&
-         i < static_cast<int>(dist.size());
-         ++i) {
-        c.hires.distortion[i] = dist[i].as<float>();
-    }
+    load_intrinsics(intrinsics_dir + "/hires.yaml", c.hires);
 
     const YAML::Node extrinsics = YAML::LoadFile(extrinsics_yaml);
     load_extrinsics(extrinsics, "hires", c.extr_hires);
     load_extrinsics(extrinsics, "tof", c.extr_tof);
+
+    c.has_tracking_front = load_optional_camera(
+        intrinsics_dir + "/tracking_front.yaml", extrinsics, "tracking_front",
+        c.tracking_front, c.extr_tracking_front);
+    c.has_tracking_down = load_optional_camera(
+        intrinsics_dir + "/tracking_down.yaml", extrinsics, "tracking_down",
+        c.tracking_down, c.extr_tracking_down);
+
+    if ((c.inference.camera == "tracking_front" && !c.has_tracking_front) ||
+        (c.inference.camera == "tracking_down" && !c.has_tracking_down)) {
+        throw std::runtime_error("no calibration for camera " + c.inference.camera);
+    }
 
     return c;
 }

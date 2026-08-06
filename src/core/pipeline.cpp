@@ -38,13 +38,35 @@ ProjectedAnchors gather(const ProjectedAnchors& a, const std::vector<size_t>& id
 }
 }  // namespace
 
+namespace {
+const IntrinsicsConfig& selected_intrinsics(const Config& c) {
+    if (c.inference.camera == "tracking_front") return c.tracking_front;
+    if (c.inference.camera == "tracking_down")  return c.tracking_down;
+    return c.hires;
+}
+}  // namespace
+
 Pipeline::Pipeline(const Config& cfg)
     : _cfg(cfg),
-      _camera(cfg.hires.fx, cfg.hires.fy, cfg.hires.cx, cfg.hires.cy,
-              cfg.hires.distortion, cfg.hires.distortion_model),
-      _pre(_camera, cfg.hires.width, cfg.hires.height,
+      _camera(selected_intrinsics(cfg).fx, selected_intrinsics(cfg).fy,
+              selected_intrinsics(cfg).cx, selected_intrinsics(cfg).cy,
+              selected_intrinsics(cfg).distortion,
+              selected_intrinsics(cfg).distortion_model),
+      _pre(_camera, selected_intrinsics(cfg).width, selected_intrinsics(cfg).height,
            cfg.inference.input_w, cfg.inference.input_h,
-           cfg.inference.preprocess, cfg.inference.fov, cfg.inference.antialias) {}
+           cfg.inference.preprocess, cfg.inference.fov, cfg.inference.antialias) {
+    // qVIO publishes per-feature depth, OpenVINS does not
+    if (cfg.inference.camera == "tracking_front") {
+        _native_cam_id = 0;
+        _extr_cam = cfg.extr_tracking_front;
+    } else if (cfg.inference.camera == "tracking_down") {
+        _native_cam_id = 1;
+        _extr_cam = cfg.extr_tracking_down;
+    } else {
+        _extr_cam = cfg.extr_hires;
+    }
+    _depth_from_feature = (cfg.profile == "qvio");
+}
 
 float Pipeline::sample_disparity(const std::vector<float>& disp, float u, float v) const {
     const int W = _cfg.inference.input_w, H = _cfg.inference.input_h;
@@ -68,10 +90,16 @@ ProjectedAnchors Pipeline::build_anchors(
     const float T_imu_image_wrt_vio[3],
     const float R_imu_image_to_vio[3][3],
     const TofFrame* tof) const {
-    ProjectedAnchors vio = project_features(
-        pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
-        _cfg.extr_hires.R, _cfg.extr_hires.T,
-        _pre, _cfg.vio.min_quality);
+    ProjectedAnchors vio = _native_cam_id >= 0
+        ? project_features_native(
+              pkt, _native_cam_id, _camera, _pre,
+              T_imu_image_wrt_vio, R_imu_image_to_vio,
+              _extr_cam.R, _extr_cam.T,
+              _depth_from_feature, _cfg.vio.min_quality)
+        : project_features(
+              pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
+              _extr_cam.R, _extr_cam.T,
+              _pre, _cfg.vio.min_quality);
     _n_vio = static_cast<int>(vio.depth.size());
     _n_tof = 0;
     if (!tof) {
@@ -87,7 +115,7 @@ ProjectedAnchors Pipeline::build_anchors(
     ProjectedAnchors tof_a = project_tof_anchors(
         *tof, T_imu_image_wrt_vio, R_imu_image_to_vio,
         T_imu_image_wrt_vio, R_imu_image_to_vio,
-        _cfg.extr_tof, _cfg.extr_hires, _pre,
+        _cfg.extr_tof, _extr_cam, _pre,
         a.tof_confidence_min, cap);
 
     if (grid <= 0) {

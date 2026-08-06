@@ -1,5 +1,6 @@
 #pragma once
 #include "../vio/vio_types.h"
+#include "camera_model.h"
 #include "preprocess.h"
 #include <vector>
 
@@ -16,4 +17,19 @@ ProjectedAnchors project_features(
     const float           R_cam_to_imu[3][3],
     const float           T_cam_wrt_imu[3],
     const Preprocessor&   pre,
+    int                   min_quality = 1);
+
+// Anchors in the camera that observed them; pix_loc needs no reprojection.
+// depth_from_feature reads the packet's depth field (qVIO fills it, OpenVINS
+// does not); otherwise depth is Z in the camera frame from tsf.
+ProjectedAnchors project_features_native(
+    const ext_vio_data_t& pkt,
+    int                   cam_id,
+    const CameraModel&    cam,
+    const Preprocessor&   pre,
+    const float           T_imu_wrt_vio[3],
+    const float           R_imu_to_vio[3][3],
+    const float           R_cam_to_imu[3][3],
+    const float           T_cam_wrt_imu[3],
+    bool                  depth_from_feature,
     int                   min_quality = 1);

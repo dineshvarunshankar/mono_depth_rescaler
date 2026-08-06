@@ -1,8 +1,7 @@
 deployment:
-  # Switch VIO backend here (service reads YAML; no --profile flag needed).
   # qvio     -> qvio_extended  (enable voxl-qvio-server)
   # openvins -> ov_extended    (enable voxl-open-vins-server)
-  profile: qvio
+  profile: openvins
   profiles:
     openvins:
       vio_pipe: ov_extended
@@ -16,6 +15,7 @@ deployment:
       projection: world_pose
 
 inference:
+  camera: hires             # hires | tracking_front | tracking_down
   mpa_pipe_name: tflite_disparity
   input_resolution: [256, 256]
   preprocess: undistort

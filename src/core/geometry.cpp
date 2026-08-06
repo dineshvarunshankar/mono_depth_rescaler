@@ -46,3 +46,52 @@ ProjectedAnchors project_features(
     }
     return out;
 }
+
+ProjectedAnchors project_features_native(
+    const ext_vio_data_t& pkt,
+    int                   cam_id,
+    const CameraModel&    cam,
+    const Preprocessor&   pre,
+    const float           T_imu_wrt_vio[3],
+    const float           R_imu_to_vio[3][3],
+    const float           R_cam_to_imu[3][3],
+    const float           T_cam_wrt_imu[3],
+    bool                  depth_from_feature,
+    int                   min_quality) {
+
+    ProjectedAnchors out;
+    if (!depth_from_feature && pkt.v.state != VIO_STATE_OK) {
+        return out;
+    }
+    for (uint32_t f = 0; f < pkt.n_total_features && f < VIO_MAX_FEATURES; ++f) {
+        const auto& ft = pkt.features[f];
+        if (ft.cam_id != cam_id) continue;
+        if (ft.point_quality < min_quality) continue;
+
+        float depth;
+        if (depth_from_feature) {
+            depth = ft.depth;
+        } else {
+            float P_imu[3], P_cam[3], point[3];
+            std::memcpy(point, ft.tsf, sizeof(point));
+            transform(point, T_imu_wrt_vio, R_imu_to_vio, P_imu);
+            transform(P_imu, T_cam_wrt_imu, R_cam_to_imu, P_cam);
+            depth = P_cam[2];
+        }
+        if (depth <= 0.0f) continue;
+
+        float nx, ny;
+        cam.unproject(ft.pix_loc[0], ft.pix_loc[1], nx, ny);
+
+        float u, v;
+        bool front = pre.project(nx * depth, ny * depth, depth, u, v);
+        if (!front) continue;
+        if (u < 0 || u >= pre.dst_w() || v < 0 || v >= pre.dst_h()) continue;
+
+        out.u.push_back(u);
+        out.v.push_back(v);
+        out.depth.push_back(depth);
+        out.var.push_back(1.0f);
+    }
+    return out;
+}

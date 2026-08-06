@@ -7,7 +7,9 @@ from ..config import Config
 from .types import Frame, RescaleResult, VioPose
 from .camera_model import CameraModel
 from .preprocess import Preprocessor
-from .geometry import project_features, compute_weights, project_features_tracking_extrinsic
+from .geometry import (project_features, compute_weights,
+                       project_features_tracking_extrinsic,
+                       project_features_native)
 from .tof_anchors import tof_anchors
 from .anchor_grid import grid_thin
 from . import fits
@@ -78,17 +80,28 @@ class Pipeline:
             raise ValueError(
                 f"anchors.balance_mode must be one of {BALANCE_MODES}"
             )
-        self.camera = CameraModel(cfg.hires.K, cfg.hires.D, cfg.hires.distortion_model)
+        intr = {"hires": cfg.hires, "tracking_front": cfg.tracking_front,
+                "tracking_down": cfg.tracking_down}[cfg.inference.camera]
+        extr = {"hires": cfg.extr_hires, "tracking_front": cfg.extr_tracking_front,
+                "tracking_down": cfg.extr_tracking_down}[cfg.inference.camera]
+        if intr is None or extr is None:
+            raise ValueError(f"no calibration for camera {cfg.inference.camera}")
+        self.camera = CameraModel(intr.K, intr.D, intr.distortion_model)
         self.pre = Preprocessor(
             self.camera,
-            src_size=(cfg.hires.width, cfg.hires.height),
+            src_size=(intr.width, intr.height),
             dst_size=cfg.inference.input_resolution,
             mode=cfg.inference.preprocess,
             fov=cfg.inference.fov,
             antialias=cfg.inference.antialias,
         )
-        self.R_cam = cfg.extr_hires.R
-        self.T_cam = cfg.extr_hires.T
+        self.R_cam = extr.R
+        self.T_cam = extr.T
+
+        # qVIO publishes per-feature depth, OpenVINS does not
+        self._native_cam_id = {"tracking_front": 0,
+                               "tracking_down": 1}.get(cfg.inference.camera)
+        self._depth_from = "feature" if cfg.profile == "qvio" else "pose"
         self.R_tof = cfg.extr_tof.R
         self.T_tof = cfg.extr_tof.T
 
@@ -156,11 +169,18 @@ class Pipeline:
         # invalid pose would not cancel (qVIO zeroes R on tracking loss).
         pose = frame.pose if frame.pose.valid else VioPose(
             np.eye(3), np.zeros(3))
-        if not frame.pose.valid:
+        native_pose_free = (self._native_cam_id is not None
+                            and self._depth_from == "feature")
+        if not frame.pose.valid and not native_pose_free:
             uv = np.empty((0, 2))
             depth = np.empty(0)
             var = np.empty(0)
             idx = np.empty(0, dtype=int)
+        elif self._native_cam_id is not None:
+            uv, depth, var, idx = project_features_native(
+                frame.features, self._native_cam_id, self.camera, self.pre,
+                pose, self.R_cam, self.T_cam, self._depth_from,
+                self.cfg.vio.min_quality, r.weighting)
         elif self.cfg.anchors.projection == "tracking_extrinsic":
             uv, depth, var, idx = project_features_tracking_extrinsic(
                 frame.features, self._track_cams, self._track_extrs,

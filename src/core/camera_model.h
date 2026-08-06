@@ -17,6 +17,9 @@ public:
     // Project to distorted (fisheye) pixel; for the raw-frame (MPA) path.
     bool project_distorted(float x, float y, float z, float& u, float& v) const;
 
+    // Raw pixel -> normalised ray at z = 1.
+    void unproject(float u, float v, float& nx, float& ny) const;
+
     float fx() const { return _K.at<double>(0, 0); }
     float fy() const { return _K.at<double>(1, 1); }
     float cx() const { return _K.at<double>(0, 2); }

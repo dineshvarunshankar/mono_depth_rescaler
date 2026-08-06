@@ -47,7 +47,7 @@ Choose the VIO backend in `/etc/mono_depth_rescaler/pipeline.yaml`:
 
 ```yaml
 deployment:
-  profile: qvio      # or openvins
+  profile: openvins   # or qvio
 ```
 
 Also enable the matching VIO service (`voxl-qvio-server` or `voxl-open-vins-server`).
@@ -81,7 +81,8 @@ systemctl is-active mono_depth_rescaler
 
 ## Selected configuration
 
-- Default YAML profile: `qvio` (`qvio_extended`); switch to `openvins` in YAML for `ov_extended`
+- Default YAML profile: `openvins` (`ov_extended`); switch to `qvio` in YAML for `qvio_extended`
+- Default inference camera: `hires`; `tracking_front` / `tracking_down` anchor from `pix_loc` without reprojection
 - ToF anchors: image-space grid (`tof_cell_px=4`, nearest per cell); VIO uncapped
 - Undistort `crop` by default (`stretch` keeps full FOV)
 - Monotonic non-smoothing spline, 10 knots, uniform anchor weights
