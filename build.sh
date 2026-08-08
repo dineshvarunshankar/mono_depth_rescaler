@@ -22,13 +22,13 @@ case "$1" in
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_CXX_STANDARD=17 \
               -DBUILD_TESTING=OFF ..
-        make -j$(nproc)
+        make -j${JOBS:-$(nproc)}
         ;;
     native)
         mkdir -p build
         cd build
         cmake -DCMAKE_BUILD_TYPE=Release ..
-        make -j$(nproc)
+        make -j${JOBS:-$(nproc)}
         ctest --output-on-failure
         ;;
     *)
