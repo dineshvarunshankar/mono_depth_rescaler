@@ -5,12 +5,12 @@ deployment:
   profiles:
     openvins:
       vio_pipe: ov_extended
-      min_quality: 1
+      min_quality: 0
       tof_max_points: 500
       projection: world_pose
     qvio:
       vio_pipe: qvio_extended
-      min_quality: 1
+      min_quality: 0
       tof_max_points: 500
       projection: world_pose
 
