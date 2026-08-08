@@ -2,7 +2,7 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 
 namespace {
@@ -51,7 +51,7 @@ void load_extrinsics(
 bool load_optional_camera(const std::string& intrinsics_path,
                           const YAML::Node& extrinsics, const std::string& name,
                           IntrinsicsConfig& intr, ExtrinsicsConfig& extr) {
-    if (!std::filesystem::exists(intrinsics_path) || !extrinsics[name]) {
+    if (!std::ifstream(intrinsics_path).good() || !extrinsics[name]) {
         return false;
     }
     load_intrinsics(intrinsics_path, intr);
