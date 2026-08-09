@@ -45,8 +45,6 @@ Config synthetic_config() {
     cfg.hires.cx = 50.0f;
     cfg.hires.cy = 50.0f;
     cfg.hires.distortion.fill(0.0f);
-    cfg.inference.input_w = 100;
-    cfg.inference.input_h = 100;
     cfg.inference.preprocess = "raw";
     cfg.inference.fov = "crop";
     cfg.inference.antialias = false;
@@ -154,8 +152,7 @@ void test_tof_projection_python_golden() {
         cfg.hires.fx, cfg.hires.fy, cfg.hires.cx, cfg.hires.cy,
         cfg.hires.distortion, cfg.hires.distortion_model);
     Preprocessor pre(
-        camera, cfg.hires.width, cfg.hires.height,
-        cfg.inference.input_w, cfg.inference.input_h,
+        camera, cfg.hires.width, cfg.hires.height, 256, 256,
         cfg.inference.preprocess, cfg.inference.fov, cfg.inference.antialias);
 
     const float pi = std::acos(-1.0f);
@@ -208,6 +205,7 @@ void test_pipeline_union_and_hold() {
     Config cfg = synthetic_config();
     cfg.anchors.tof_cell_px = 0;  // no grid: union path
     Pipeline pipeline(cfg);
+    pipeline.set_input_size(100, 100);
     float T[3], R[3][3];
     identity_pose(T, R);
 
@@ -255,6 +253,7 @@ void test_pipeline_grid_fusion() {
     Config cfg = synthetic_config();
     cfg.anchors.tof_cell_px = 6;  // ~16 cells/axis at w=100
     Pipeline pipeline(cfg);
+    pipeline.set_input_size(100, 100);
     float T[3], R[3][3];
     identity_pose(T, R);
 
@@ -289,6 +288,7 @@ void test_pipeline_grid_fusion() {
     Config cfg1 = synthetic_config();
     cfg1.anchors.tof_cell_px = 100;  // 1 cell (whole image)
     Pipeline p1(cfg1);
+    p1.set_input_size(100, 100);
     ProjectedAnchors c1 = p1.build_anchors(packet, T, R, &tof);
     int n_tof1 = 0;
     for (float d : c1.depth) {
@@ -301,6 +301,7 @@ void test_pipeline_grid_fusion() {
 void test_tof_only_without_vio() {
     Config cfg = synthetic_config();
     Pipeline pipeline(cfg);
+    pipeline.set_input_size(100, 100);
     float T[3], R[3][3];
     identity_pose(T, R);
 
@@ -345,6 +346,55 @@ void test_tof_only_without_vio() {
     assert(pipeline.build_anchors(no_vio, T, R, nullptr).depth.empty());
 }
 
+// pooled output must equal min-pooling the full-resolution depth
+void test_output_pooling_equals_min_pool() {
+    Config cfg = synthetic_config();
+    cfg.anchors.tof_cell_px = 0;
+    float T[3], R[3][3];
+    identity_pose(T, R);
+
+    ext_vio_data_t packet{};
+    packet.n_total_features = 5;
+    packet.v.timestamp_ns = 1'000'000'000;
+    packet.v.state = VIO_STATE_OK;
+    std::vector<float> disparity(100 * 100);
+    for (int i = 0; i < 100 * 100; ++i) {
+        disparity[i] = 0.1f + 0.9f * float(i % 97) / 97.0f;
+    }
+    for (int i = 0; i < 5; ++i) {
+        const float depth = 1.0f + i;
+        const int u = 20 + i * 15;
+        packet.features[i].point_quality = VIO_POINT_HIGH;
+        packet.features[i].tsf[0] = (u - 50.0f) * depth / 50.0f;
+        packet.features[i].tsf[1] = 0.0f;
+        packet.features[i].tsf[2] = depth;
+        disparity[50 * 100 + u] = 1.0f / depth;
+    }
+
+    Pipeline full(cfg);
+    full.set_input_size(100, 100);
+    auto a = full.process(1'000'000'000, packet, T, R, nullptr, disparity);
+    assert(a && a->w == 100 && a->h == 100);
+
+    cfg.output.size = 10;
+    Pipeline pooled(cfg);
+    pooled.set_input_size(100, 100);
+    auto b = pooled.process(1'000'000'000, packet, T, R, nullptr, disparity);
+    assert(b && b->w == 10 && b->h == 10);
+
+    for (int y = 0; y < 10; ++y) {
+        for (int x = 0; x < 10; ++x) {
+            float lo = a->depth[(y * 10) * 100 + x * 10];
+            for (int j = 0; j < 10; ++j) {
+                for (int i = 0; i < 10; ++i) {
+                    lo = std::min(lo, a->depth[(y * 10 + j) * 100 + x * 10 + i]);
+                }
+            }
+            assert(std::abs(b->depth[y * 10 + x] - lo) < 1e-5f);
+        }
+    }
+}
+
 void test_image_packet() {
     ImageMetadata metadata{};
     metadata.timestamp_ns = 42;
@@ -359,6 +409,62 @@ void test_image_packet() {
     assert(decoded.width == 4 && decoded.height == 3);
     assert(decoded.format == IMAGE_FORMAT_FLOAT32_VALUE);
     assert(decoded.size_bytes == 48);
+}
+
+void test_uint16_mm_packet() {
+    ImageMetadata metadata{};
+    metadata.timestamp_ns = 42;
+    std::vector<float> depth = {0.3f, 1.2345f, 50.0f, 99.0f};
+    std::vector<uint8_t> packet;
+    fill_uint16_mm_image_packet(metadata, depth, 4, 1, packet);
+
+    ImageMetadata decoded{};
+    std::memcpy(&decoded, packet.data(), sizeof(decoded));
+    assert(decoded.timestamp_ns == 42);
+    assert(decoded.format == IMAGE_FORMAT_RAW16_VALUE);
+    assert(decoded.size_bytes == 8);
+    assert(decoded.stride == 8);
+
+    const auto* mm =
+        reinterpret_cast<const uint16_t*>(packet.data() + sizeof(decoded));
+    assert(mm[0] == 300);
+    assert(mm[1] == 1234 || mm[1] == 1235);  // rounds to nearest mm
+    assert(mm[2] == 50000);
+    assert(mm[3] == 65535);                  // saturates, never wraps
+}
+
+// a model swap changes the frame size with no config change
+void test_input_size_follows_the_frame() {
+    Config cfg = synthetic_config();
+    cfg.anchors.tof_cell_px = 0;
+    float T[3], R[3][3];
+    identity_pose(T, R);
+
+    ext_vio_data_t packet{};
+    packet.n_total_features = 5;
+    packet.v.timestamp_ns = 1'000'000'000;
+    packet.v.state = VIO_STATE_OK;
+    for (int i = 0; i < 5; ++i) {
+        const float depth = 1.0f + i;
+        packet.features[i].point_quality = VIO_POINT_HIGH;
+        packet.features[i].tsf[0] = (20 + i * 15 - 50.0f) * depth / 50.0f;
+        packet.features[i].tsf[1] = 0.0f;
+        packet.features[i].tsf[2] = depth;
+    }
+
+    Pipeline pipeline(cfg);
+    pipeline.set_input_size(100, 100);
+    std::vector<float> big(100 * 100, 0.4f);
+    auto a = pipeline.process(1'000'000'000, packet, T, R, nullptr, big);
+    assert(a && a->w == 100 && a->h == 100);
+
+    pipeline.set_input_size(50, 50);
+    std::vector<float> small(50 * 50, 0.4f);
+    auto b = pipeline.process(1'100'000'000, packet, T, R, nullptr, small);
+    assert(b && b->w == 50 && b->h == 50);
+
+    // the old size is rejected, not read out of bounds
+    assert(!pipeline.process(1'200'000'000, packet, T, R, nullptr, big));
 }
 }
 
@@ -455,7 +561,10 @@ int main() {
     test_pipeline_union_and_hold();
     test_pipeline_grid_fusion();
     test_tof_only_without_vio();
+    test_output_pooling_equals_min_pool();
+    test_input_size_follows_the_frame();
     test_image_packet();
+    test_uint16_mm_packet();
     test_native_anchors_use_pix_loc();
     test_needs_pose_contract();
     std::cout << "rescaler_core_tests passed\n";

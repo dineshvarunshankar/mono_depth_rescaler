@@ -68,8 +68,21 @@ See [AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) §4.4 for the
 tflite-server config and patch guide.
 
 Match on both sides: `allow_multiple: false` -> pipe `tflite_disparity` (rescaler
-default), `publish_disparity: 1`, and `fov` / `inference.input_resolution`
-(256 for MiDaS).
+default), `publish_disparity: 1`, and `fov`. Frame size needs no setting: the
+service takes it from the incoming frame, so swapping models needs no config
+change.
+
+The `output` block controls what is published:
+
+| key | meaning |
+| --- | --- |
+| `size` | `0` keeps the model resolution; `N` max-pools to `N`x`N` |
+| `format` | `float32`, or `uint16_mm` for millimetres capped at 65.535 m |
+| `viz` | `1` publishes `<pipe>_viz`, a JET view over `depth_min`..`depth_max` |
+
+Pooling happens after the fit, on disparity. The fit is monotonic, so this gives
+the same values as min-pooling the full-resolution depth, at a fraction of the
+cost.
 
 ### 4. Verify
 

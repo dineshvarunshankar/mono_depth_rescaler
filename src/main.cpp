@@ -1,6 +1,7 @@
 #include "core/config.h"
 #include "core/pipeline.h"
 #include "io/image_packet.h"
+#include "io/depth_viz.h"
 #include "vio/mpa_vio_source.h"
 #include "vio/pose_buffer.h"
 #include "inference/mpa_backend.h"
@@ -26,6 +27,7 @@ static constexpr int CH_VIO = 0;
 static constexpr int CH_TOF = 1;
 static constexpr int CH_DEPTH = 2;
 static constexpr int CH_OUT = 0;
+static constexpr int CH_VIZ = 1;
 
 struct Arguments {
     std::string config{"/etc/mono_depth_rescaler/pipeline.yaml"};
@@ -102,19 +104,27 @@ int run(const Arguments& args) {
         throw std::runtime_error("failed to create output pipe");
     }
 
+    const std::string viz_pipe = cfg.output.pipe + "_viz";
+    if (cfg.output.viz) {
+        pipe_info_t viz_info;
+        fill_output_pipe_info(&viz_info, viz_pipe);
+        if (pipe_server_create(CH_VIZ, viz_info, 0)) {
+            throw std::runtime_error("failed to create viz pipe");
+        }
+    }
+
     auto vio_cb = [&](const ext_vio_data_t& pkt) {
         pose_buf.push(pkt);
     };
 
     TofSource tof_source(cfg.anchors.tof_pipe, CH_TOF);
-    MpaBackend depth_source(
-        cfg.inference.mpa_pipe_name,
-        cfg.inference.input_w, cfg.inference.input_h,
-        CH_DEPTH);
+    MpaBackend depth_source(cfg.inference.mpa_pipe_name, CH_DEPTH);
 
-    std::vector<uint8_t> out_packet;
+    const bool uint16_out = cfg.output.format == "uint16_mm";
+    std::vector<uint8_t> out_packet, viz_packet;
     depth_source.set_frame_callback([&](const MpaBackend::Frame& frame) {
         stats.disp_in.fetch_add(1, std::memory_order_relaxed);
+        pipeline.set_input_size(frame.metadata.width, frame.metadata.height);
         const int64_t image_time = frame.mid_timestamp_ns();
         ext_vio_data_t vio_pkt;
         float image_T[3], image_R[3][3];
@@ -159,14 +169,28 @@ int run(const Arguments& args) {
             stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-        fill_float_image_packet(
-            frame.metadata, result->depth,
-            cfg.inference.input_w, cfg.inference.input_h, out_packet);
+        if (uint16_out) {
+            fill_uint16_mm_image_packet(
+                frame.metadata, result->depth, result->w, result->h, out_packet);
+        } else {
+            fill_float_image_packet(
+                frame.metadata, result->depth, result->w, result->h, out_packet);
+        }
         pipe_server_write(
             CH_OUT,
             reinterpret_cast<char*>(out_packet.data()),
             static_cast<int>(out_packet.size()));
         stats.out_written.fetch_add(1, std::memory_order_relaxed);
+
+        if (cfg.output.viz) {
+            fill_depth_viz_packet(
+                frame.metadata, result->depth, result->w, result->h,
+                cfg.rescale.depth_min, cfg.rescale.depth_max, viz_packet);
+            pipe_server_write(
+                CH_VIZ,
+                reinterpret_cast<char*>(viz_packet.data()),
+                static_cast<int>(viz_packet.size()));
+        }
     });
 
     // Disparity disconnect is soft: auto-reconnect, no restart.
@@ -199,10 +223,12 @@ int run(const Arguments& args) {
 
     std::printf(
         "profile=%s fov=%s vio=%s disparity=%s tof_cap=%d output=%s "
-        "(from YAML%s)\n",
+        "size=%d format=%s viz=%s (from YAML%s)\n",
         cfg.profile.c_str(), cfg.inference.fov.c_str(), cfg.vio.pipe.c_str(),
         cfg.inference.mpa_pipe_name.c_str(),
         cfg.anchors.tof_max_points, cfg.output.pipe.c_str(),
+        cfg.output.size, cfg.output.format.c_str(),
+        cfg.output.viz ? viz_pipe.c_str() : "off",
         args.profile.empty() && args.fov.empty() ? "" : "; CLI override set");
 
     uint64_t ticks = 0;

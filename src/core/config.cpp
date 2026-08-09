@@ -83,9 +83,6 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
     const YAML::Node inference = pipeline["inference"];
     c.inference.mpa_pipe_name =
         inference["mpa_pipe_name"].as<std::string>("tflite_disparity");
-    const YAML::Node res = inference["input_resolution"];
-    c.inference.input_w = res[0].as<int>(256);
-    c.inference.input_h = res[1].as<int>(256);
     c.inference.preprocess =
         inference["preprocess"].as<std::string>("undistort");
     c.inference.fov = fov_override.empty()
@@ -98,8 +95,7 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
         c.inference.camera != "tracking_down") {
         throw std::runtime_error("unknown inference camera: " + c.inference.camera);
     }
-    if (c.inference.input_w <= 0 || c.inference.input_h <= 0 ||
-        c.inference.preprocess != "undistort" ||
+    if (c.inference.preprocess != "undistort" ||
         (c.inference.fov != "crop" && c.inference.fov != "stretch")) {
         throw std::runtime_error(
             "deployment supports undistort with crop or stretch");
@@ -165,8 +161,15 @@ Config Config::from_yaml(const std::string& pipeline_yaml,
         throw std::runtime_error("invalid deployment depth limits");
     }
 
-    c.output.pipe =
-        pipeline["output"]["pipe"].as<std::string>("metric_depth");
+    const YAML::Node output = pipeline["output"];
+    c.output.pipe = output["pipe"].as<std::string>("metric_depth");
+    c.output.size = output["size"].as<int>(0);
+    c.output.format = output["format"].as<std::string>("float32");
+    c.output.viz = output["viz"].as<int>(0) != 0;
+    if (c.output.size < 0 ||
+        (c.output.format != "float32" && c.output.format != "uint16_mm")) {
+        throw std::runtime_error("invalid output size or format");
+    }
 
     load_intrinsics(intrinsics_dir + "/hires.yaml", c.hires);
 

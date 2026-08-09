@@ -26,6 +26,25 @@ ProjectedAnchors gate(const ProjectedAnchors& a, float lo, float hi) {
     return out;
 }
 
+std::vector<float> max_pool(
+    const std::vector<float>& src, int sw, int sh, int dw, int dh) {
+    std::vector<float> out(static_cast<size_t>(dw) * dh);
+    for (int y = 0; y < dh; ++y) {
+        const int y0 = y * sh / dh, y1 = (y + 1) * sh / dh;
+        for (int x = 0; x < dw; ++x) {
+            const int x0 = x * sw / dw, x1 = (x + 1) * sw / dw;
+            float m = src[y0 * sw + x0];
+            for (int j = y0; j < y1; ++j) {
+                for (int i = x0; i < x1; ++i) {
+                    m = std::max(m, src[j * sw + i]);
+                }
+            }
+            out[y * dw + x] = m;
+        }
+    }
+    return out;
+}
+
 ProjectedAnchors gather(const ProjectedAnchors& a, const std::vector<size_t>& idx) {
     ProjectedAnchors out;
     for (const size_t i : idx) {
@@ -51,10 +70,7 @@ Pipeline::Pipeline(const Config& cfg)
       _camera(selected_intrinsics(cfg).fx, selected_intrinsics(cfg).fy,
               selected_intrinsics(cfg).cx, selected_intrinsics(cfg).cy,
               selected_intrinsics(cfg).distortion,
-              selected_intrinsics(cfg).distortion_model),
-      _pre(_camera, selected_intrinsics(cfg).width, selected_intrinsics(cfg).height,
-           cfg.inference.input_w, cfg.inference.input_h,
-           cfg.inference.preprocess, cfg.inference.fov, cfg.inference.antialias) {
+              selected_intrinsics(cfg).distortion_model) {
     // qVIO publishes per-feature depth, OpenVINS does not
     if (cfg.inference.camera == "tracking_front") {
         _native_cam_id = 0;
@@ -68,8 +84,20 @@ Pipeline::Pipeline(const Config& cfg)
     _depth_from_feature = (cfg.profile == "qvio");
 }
 
+void Pipeline::set_input_size(int w, int h) {
+    if (w == _in_w && h == _in_h) {
+        return;
+    }
+    _in_w = w;
+    _in_h = h;
+    const auto& intr = selected_intrinsics(_cfg);
+    _pre = std::make_unique<Preprocessor>(
+        _camera, intr.width, intr.height, w, h,
+        _cfg.inference.preprocess, _cfg.inference.fov, _cfg.inference.antialias);
+}
+
 float Pipeline::sample_disparity(const std::vector<float>& disp, float u, float v) const {
-    const int W = _cfg.inference.input_w, H = _cfg.inference.input_h;
+    const int W = _in_w, H = _in_h;
     auto clampi = [](int x, int lo, int hi) { return std::max(lo, std::min(x, hi)); };
     if (!_cfg.rescale.subpixel_2x2) {
         int ui = clampi(int(u), 0, W - 1);
@@ -92,14 +120,14 @@ ProjectedAnchors Pipeline::build_anchors(
     const TofFrame* tof) const {
     ProjectedAnchors vio = _native_cam_id >= 0
         ? project_features_native(
-              pkt, _native_cam_id, _camera, _pre,
+              pkt, _native_cam_id, _camera, *_pre,
               T_imu_image_wrt_vio, R_imu_image_to_vio,
               _extr_cam.R, _extr_cam.T,
               _depth_from_feature, _cfg.vio.min_quality)
         : project_features(
               pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
               _extr_cam.R, _extr_cam.T,
-              _pre, _cfg.vio.min_quality);
+              *_pre, _cfg.vio.min_quality);
     _n_vio = static_cast<int>(vio.depth.size());
     _n_tof = 0;
     if (!tof) {
@@ -109,13 +137,13 @@ ProjectedAnchors Pipeline::build_anchors(
     const auto& a = _cfg.anchors;
     const int grid = a.tof_cell_px > 0
         ? static_cast<int>(std::lround(
-              static_cast<double>(_pre.dst_w()) / a.tof_cell_px))
+              static_cast<double>(_pre->dst_w()) / a.tof_cell_px))
         : 0;
     const int cap = grid > 0 ? 0 : a.tof_max_points;
     ProjectedAnchors tof_a = project_tof_anchors(
         *tof, T_imu_image_wrt_vio, R_imu_image_to_vio,
         T_imu_image_wrt_vio, R_imu_image_to_vio,
-        _cfg.extr_tof, _extr_cam, _pre,
+        _cfg.extr_tof, _extr_cam, *_pre,
         a.tof_confidence_min, cap);
 
     if (grid <= 0) {
@@ -132,7 +160,7 @@ ProjectedAnchors Pipeline::build_anchors(
     _n_vio = static_cast<int>(v.depth.size());
     std::vector<size_t> tk;
     grid_thin(t.u, t.v, t.depth, grid, a.max_per_cell,
-              static_cast<float>(_pre.dst_w()), static_cast<float>(_pre.dst_h()),
+              static_cast<float>(_pre->dst_w()), static_cast<float>(_pre->dst_h()),
               a.tof_cell_pick, tk);
     _n_tof = static_cast<int>(tk.size());
     ProjectedAnchors out = v;  // all VIO + thinned ToF
@@ -153,7 +181,7 @@ std::unique_ptr<RescaleResult> Pipeline::process(
     const std::vector<float>& disparity) {
     const auto& r = _cfg.rescale;
     if (disparity.size() !=
-        static_cast<size_t>(_cfg.inference.input_w * _cfg.inference.input_h)) {
+        static_cast<size_t>(_in_w * _in_h)) {
         return nullptr;
     }
     ProjectedAnchors a = build_anchors(
@@ -191,7 +219,7 @@ std::unique_ptr<RescaleResult> Pipeline::process(
 std::unique_ptr<RescaleResult> Pipeline::apply_held(
     int64_t frame_timestamp_ns, const std::vector<float>& disparity) {
     if (disparity.size() !=
-        static_cast<size_t>(_cfg.inference.input_w * _cfg.inference.input_h)) {
+        static_cast<size_t>(_in_w * _in_h)) {
         return nullptr;
     }
     if (!_has_held ||
@@ -207,12 +235,25 @@ std::unique_ptr<RescaleResult> Pipeline::render(
     const fits::Fit& fit, const std::vector<float>& disparity,
     bool held, int n_anchors, int64_t calib_age_ns) const {
     const auto& r = _cfg.rescale;
-    const int npix = _cfg.inference.input_w * _cfg.inference.input_h;
+    const int n = _cfg.output.size;
+    const bool pool = n > 0;
+    const int W = pool ? n : _in_w;
+    const int H = pool ? n : _in_h;
+    // the fit is monotonic, so max-pooling disparity here equals min-pooling
+    // depth after the render
+    std::vector<float> pooled;
+    if (pool) {
+        pooled = max_pool(disparity, _in_w, _in_h, W, H);
+    }
+    const std::vector<float>& src = pool ? pooled : disparity;
+
     const double d_lo = 1.0 / r.depth_max, d_hi = 1.0 / r.depth_min;
     auto res = std::make_unique<RescaleResult>();
-    res->depth.resize(npix);
-    for (int i = 0; i < npix; ++i) {
-        double x = std::min(std::max(double(disparity[i]), fit.x_min), fit.x_max);
+    res->w = W;
+    res->h = H;
+    res->depth.resize(static_cast<size_t>(W) * H);
+    for (int i = 0; i < W * H; ++i) {
+        double x = std::min(std::max(double(src[i]), fit.x_min), fit.x_max);
         double md = fit.predict(x);
         md = std::min(std::max(md, d_lo), d_hi);
         res->depth[i] = float(1.0 / md);

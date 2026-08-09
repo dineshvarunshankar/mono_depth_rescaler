@@ -10,7 +10,8 @@
 #include <vector>
 
 struct RescaleResult {
-    std::vector<float>  depth;         // (H_model x W_model) metric depth, metres
+    std::vector<float>  depth;         // (h x w) metric depth, metres
+    int     w{0}, h{0};                // output size; differs from input when pooled
     std::vector<double> params;        // fitted curve params (empty for splines)
     int     n_anchors{0};              // 0 on a held frame (no fresh fit)
     float   inlier_ratio{1.0f};
@@ -21,6 +22,11 @@ struct RescaleResult {
 class Pipeline {
 public:
     explicit Pipeline(const Config& cfg);
+
+    // Adopt the incoming frame's size, rebuilding the projector when it changes.
+    void set_input_size(int w, int h);
+    int input_w() const { return _in_w; }
+    int input_h() const { return _in_h; }
 
     // ToF is rigid to the camera, so it needs no pose: the image pose is used
     // on both sides of the world hop, leaving the fixed ToF->hires extrinsic.
@@ -61,9 +67,10 @@ private:
         const fits::Fit& fit, const std::vector<float>& disparity,
         bool held, int n_anchors, int64_t calib_age_ns) const;
 
-    const Config&             _cfg;
-    CameraModel               _camera;
-    Preprocessor              _pre;
+    const Config&                 _cfg;
+    CameraModel                   _camera;
+    int                           _in_w{0}, _in_h{0};
+    std::unique_ptr<Preprocessor> _pre;
     // -1 = hires, reproject through the pose; else the observing camera's id
     int                       _native_cam_id{-1};
     bool                      _depth_from_feature{false};

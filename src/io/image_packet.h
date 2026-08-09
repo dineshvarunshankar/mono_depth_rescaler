@@ -6,6 +6,8 @@
 #include <vector>
 
 constexpr int16_t IMAGE_FORMAT_FLOAT32_VALUE = 11;
+constexpr int16_t IMAGE_FORMAT_RAW16_VALUE = 5;
+constexpr int16_t IMAGE_FORMAT_RGB_VALUE = 10;
 
 #pragma pack(push, 1)
 struct ImageMetadata {
@@ -48,6 +50,32 @@ inline void fill_float_image_packet(
     std::memcpy(
         packet_out.data() + sizeof(metadata), pixels.data(),
         static_cast<size_t>(metadata.size_bytes));
+}
+
+// Metric depth as uint16 millimetres; saturates at 65.535 m.
+inline void fill_uint16_mm_image_packet(
+    ImageMetadata metadata,
+    const std::vector<float>& depth_m,
+    int width,
+    int height,
+    std::vector<uint8_t>& packet_out) {
+    const size_t expected = static_cast<size_t>(width) * height;
+    if (depth_m.size() != expected) {
+        throw std::invalid_argument("pixel count does not match image dimensions");
+    }
+    metadata.width = static_cast<int16_t>(width);
+    metadata.height = static_cast<int16_t>(height);
+    metadata.size_bytes = static_cast<int32_t>(expected * sizeof(uint16_t));
+    metadata.stride = width * static_cast<int>(sizeof(uint16_t));
+    metadata.format = IMAGE_FORMAT_RAW16_VALUE;
+
+    packet_out.resize(sizeof(metadata) + static_cast<size_t>(metadata.size_bytes));
+    std::memcpy(packet_out.data(), &metadata, sizeof(metadata));
+    auto* mm = reinterpret_cast<uint16_t*>(packet_out.data() + sizeof(metadata));
+    for (size_t i = 0; i < expected; ++i) {
+        const float v = depth_m[i] * 1000.0f;
+        mm[i] = v >= 65535.0f ? 65535 : static_cast<uint16_t>(v + 0.5f);
+    }
 }
 
 inline std::vector<uint8_t> make_float_image_packet(

@@ -17,7 +17,7 @@ deployment:
 inference:
   camera: hires             # hires | tracking_front | tracking_down
   mpa_pipe_name: tflite_disparity
-  input_resolution: [256, 256]
+  input_resolution: [256, 256]   # offline prototype only; the service reads it from the frame
   preprocess: undistort
   fov: crop
   antialias: false
@@ -54,3 +54,6 @@ anchors:
 
 output:
   pipe: metric_depth
+  size: 0                   # 0 = model resolution, else NxN (max-pooled)
+  format: uint16_mm           # float32 | uint16_mm
+  viz: 0                    # 0 empty,1 publishes metric_depth_viz, JET over depth_min..depth_max

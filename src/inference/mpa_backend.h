@@ -25,7 +25,7 @@ public:
     using FrameCallback = std::function<void(const Frame&)>;
     using DisconnectCallback = std::function<void()>;
 
-    MpaBackend(std::string pipe, int model_w, int model_h, int ch = 2);
+    MpaBackend(std::string pipe, int ch = 2);
     ~MpaBackend();
 
     void set_frame_callback(FrameCallback cb);
@@ -45,7 +45,7 @@ private:
     void worker_loop();
 
     std::string        _pipe;
-    int                _mw, _mh, _ch;
+    int                _ch;
     std::atomic<bool>  _running{false};
     mutable std::mutex _mtx;
     std::condition_variable _cv;

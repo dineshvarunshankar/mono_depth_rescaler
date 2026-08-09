@@ -7,10 +7,8 @@ static_assert(
     sizeof(ImageMetadata) == sizeof(camera_image_metadata_t),
     "ImageMetadata must match camera_image_metadata_t");
 
-MpaBackend::MpaBackend(std::string pipe, int model_w, int model_h, int ch)
-    : _pipe(std::move(pipe)), _mw(model_w), _mh(model_h), _ch(ch) {
-    _latest.disparity.resize(static_cast<size_t>(_mw) * _mh);
-}
+MpaBackend::MpaBackend(std::string pipe, int ch)
+    : _pipe(std::move(pipe)), _ch(ch) {}
 
 MpaBackend::~MpaBackend() {
     stop();
@@ -73,7 +71,7 @@ void MpaBackend::camera_cb(
     std::memcpy(&image_meta, &meta, sizeof(image_meta));
     self->on_frame(
         image_meta, reinterpret_cast<const float*>(frame),
-        self->_mw * self->_mh);
+        image_meta.width * image_meta.height);
 }
 
 void MpaBackend::disc_cb(int /*ch*/, void* context) {
@@ -101,7 +99,6 @@ void MpaBackend::on_frame(
         return;
     }
     if (meta.format != IMAGE_FORMAT_FLOAT32_VALUE ||
-        meta.width != _mw || meta.height != _mh ||
         meta.size_bytes != npix * static_cast<int>(sizeof(float))) {
         return;
     }
@@ -109,6 +106,7 @@ void MpaBackend::on_frame(
     {
         std::lock_guard<std::mutex> lk(_mtx);
         _latest.metadata = meta;
+        _latest.disparity.resize(static_cast<size_t>(npix));
         std::memcpy(
             _latest.disparity.data(), pixels,
             static_cast<size_t>(npix) * sizeof(float));

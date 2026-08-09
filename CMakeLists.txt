@@ -38,6 +38,7 @@ if(BUILD_VOXL_APP)
     if(MODAL_PIPE_LIB AND MODAL_JSON_LIB AND MODAL_PIPE_INC)
         add_executable(mono_depth_rescaler
             src/main.cpp
+            src/io/depth_viz.cpp
             src/vio/mpa_vio_source.cpp
             src/inference/mpa_backend.cpp
             src/tof/tof_source.cpp)

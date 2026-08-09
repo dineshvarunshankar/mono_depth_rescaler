@@ -12,7 +12,6 @@ struct VioConfig {
 struct InferenceConfig {
     std::string camera{"hires"};   // hires | tracking_front | tracking_down
     std::string mpa_pipe_name;
-    int         input_w{256}, input_h{256};
     std::string preprocess{"undistort"};
     std::string fov{"crop"};
     bool        antialias{false};
@@ -61,6 +60,9 @@ struct AnchorsConfig {
 
 struct OutputConfig {
     std::string pipe{"metric_depth"};
+    int         size{0};             // 0 = model resolution, else size x size
+    std::string format{"float32"};   // float32 | uint16_mm
+    bool        viz{false};          // publish <pipe>_viz
 };
 
 struct Config {
