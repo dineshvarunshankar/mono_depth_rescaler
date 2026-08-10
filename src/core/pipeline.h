@@ -61,6 +61,11 @@ public:
         vio = _n_vio; tof = _n_tof;
     }
 
+    // Depth range of those VIO anchors, metres. Zero when there are none.
+    void last_vio_depth_range(float& lo, float& hi) const {
+        lo = _vio_dmin; hi = _vio_dmax;
+    }
+
 private:
     float sample_disparity(const std::vector<float>& disp, float u, float v) const;
     std::unique_ptr<RescaleResult> render(
@@ -80,4 +85,5 @@ private:
     int64_t                   _held_t_ns{0};
     int                       _last_anchors{0};
     mutable int               _n_vio{0}, _n_tof{0};
+    mutable float             _vio_dmin{0.0f}, _vio_dmax{0.0f};
 };

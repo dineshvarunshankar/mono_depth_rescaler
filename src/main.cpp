@@ -90,6 +90,7 @@ struct Stats {
     std::atomic<int>      anchors{0};   // last fitted frame
     std::atomic<int>      vio{0}, tof{0};
     std::atomic<int>      pkt_feat{0};  // raw n_total_features, before projection
+    std::atomic<float>    vio_dmin{0.0f}, vio_dmax{0.0f};
 };
 
 int run(const Arguments& args) {
@@ -168,6 +169,10 @@ int run(const Arguments& args) {
         pipeline.last_anchor_split(n_vio, n_tof);
         stats.vio.store(n_vio, std::memory_order_relaxed);
         stats.tof.store(n_tof, std::memory_order_relaxed);
+        float d_lo, d_hi;
+        pipeline.last_vio_depth_range(d_lo, d_hi);
+        stats.vio_dmin.store(d_lo, std::memory_order_relaxed);
+        stats.vio_dmax.store(d_hi, std::memory_order_relaxed);
         if (!result) {
             stats.fit_fail.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -249,7 +254,7 @@ int run(const Arguments& args) {
                 stderr,
                 "mono_depth_rescaler stats: disp_in=%llu pose_miss=%llu "
                 "vio_bad=%llu tof_miss=%llu fit_fail=%llu out=%llu "
-                "anchors=%d pkt_feat=%d vio=%d tof=%d\n",
+                "anchors=%d pkt_feat=%d vio=%d vio_d=%.1f-%.1f tof=%d\n",
                 static_cast<unsigned long long>(
                     stats.disp_in.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(
@@ -265,6 +270,8 @@ int run(const Arguments& args) {
                 stats.anchors.load(std::memory_order_relaxed),
                 stats.pkt_feat.load(std::memory_order_relaxed),
                 stats.vio.load(std::memory_order_relaxed),
+                static_cast<double>(stats.vio_dmin.load(std::memory_order_relaxed)),
+                static_cast<double>(stats.vio_dmax.load(std::memory_order_relaxed)),
                 stats.tof.load(std::memory_order_relaxed));
         }
     }

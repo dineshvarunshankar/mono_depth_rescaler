@@ -13,12 +13,17 @@ void append(ProjectedAnchors& dst, const ProjectedAnchors& src) {
     dst.var.insert(dst.var.end(), src.var.begin(), src.var.end());
 }
 
-int count_in_range(const std::vector<float>& depth, float lo, float hi) {
-    int n = 0;
+void depth_stats(const std::vector<float>& depth, float lo, float hi,
+                 int& n, float& dmin, float& dmax) {
+    n = 0;
+    dmin = 0.0f;
+    dmax = 0.0f;
     for (const float d : depth) {
-        if (d >= lo && d <= hi) ++n;
+        if (d < lo || d > hi) continue;
+        if (n == 0 || d < dmin) dmin = d;
+        if (n == 0 || d > dmax) dmax = d;
+        ++n;
     }
-    return n;
 }
 
 ProjectedAnchors gate(const ProjectedAnchors& a, float lo, float hi) {
@@ -136,9 +141,9 @@ ProjectedAnchors Pipeline::build_anchors(
               pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
               _extr_cam.R, _extr_cam.T,
               *_pre, _cfg.vio.min_quality);
-    // count post-gate so it means the same with and without ToF
-    _n_vio = count_in_range(
-        vio.depth, _cfg.rescale.anchor_depth_min, _cfg.rescale.anchor_depth_max);
+    // post-gate so it means the same with and without ToF
+    depth_stats(vio.depth, _cfg.rescale.anchor_depth_min,
+                _cfg.rescale.anchor_depth_max, _n_vio, _vio_dmin, _vio_dmax);
     _n_tof = 0;
     if (!tof) {
         return vio;  // no ToF: keep all VIO
@@ -167,7 +172,6 @@ ProjectedAnchors Pipeline::build_anchors(
     ProjectedAnchors t = gate(
         tof_a, r.anchor_depth_min,
         std::min(r.anchor_depth_max, a.tof_trust_range_m));
-    _n_vio = static_cast<int>(v.depth.size());
     std::vector<size_t> tk;
     grid_thin(t.u, t.v, t.depth, grid, a.max_per_cell,
               static_cast<float>(_pre->dst_w()), static_cast<float>(_pre->dst_h()),
