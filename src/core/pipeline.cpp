@@ -13,6 +13,14 @@ void append(ProjectedAnchors& dst, const ProjectedAnchors& src) {
     dst.var.insert(dst.var.end(), src.var.begin(), src.var.end());
 }
 
+int count_in_range(const std::vector<float>& depth, float lo, float hi) {
+    int n = 0;
+    for (const float d : depth) {
+        if (d >= lo && d <= hi) ++n;
+    }
+    return n;
+}
+
 ProjectedAnchors gate(const ProjectedAnchors& a, float lo, float hi) {
     ProjectedAnchors out;
     for (size_t i = 0; i < a.depth.size(); ++i) {
@@ -128,7 +136,9 @@ ProjectedAnchors Pipeline::build_anchors(
               pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
               _extr_cam.R, _extr_cam.T,
               *_pre, _cfg.vio.min_quality);
-    _n_vio = static_cast<int>(vio.depth.size());
+    // count post-gate so it means the same with and without ToF
+    _n_vio = count_in_range(
+        vio.depth, _cfg.rescale.anchor_depth_min, _cfg.rescale.anchor_depth_max);
     _n_tof = 0;
     if (!tof) {
         return vio;  // no ToF: keep all VIO

@@ -1,4 +1,5 @@
 #include "geometry.h"
+#include <cmath>
 #include <cstring>
 
 static void transform(const float P_in[3], const float T[3],
@@ -31,6 +32,10 @@ ProjectedAnchors project_features(
         float P_imu[3], P_cam[3];
         float point[3];
         std::memcpy(point, ft.tsf, sizeof(point));
+        if (!std::isfinite(point[0]) || !std::isfinite(point[1]) ||
+            !std::isfinite(point[2])) {
+            continue;
+        }
         transform(point, T_imu_wrt_vio, R_imu_to_vio, P_imu);
         transform(P_imu, T_cam_wrt_imu, R_cam_to_imu, P_cam);
 

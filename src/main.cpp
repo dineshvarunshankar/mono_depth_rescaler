@@ -89,6 +89,7 @@ struct Stats {
     std::atomic<uint64_t> out_written{0};
     std::atomic<int>      anchors{0};   // last fitted frame
     std::atomic<int>      vio{0}, tof{0};
+    std::atomic<int>      pkt_feat{0};  // raw n_total_features, before projection
 };
 
 int run(const Arguments& args) {
@@ -131,6 +132,8 @@ int run(const Arguments& args) {
         const bool have_pose = pose_buf.get(
             image_time, cfg.anchors.feature_tol_ns, vio_pkt, image_T, image_R);
 
+        stats.pkt_feat.store(
+            have_pose ? vio_pkt.n_total_features : 0, std::memory_order_relaxed);
         const bool vio_ok = have_pose && vio_pkt.v.state == VIO_STATE_OK;
         if (!have_pose) {
             stats.pose_miss.fetch_add(1, std::memory_order_relaxed);
@@ -246,7 +249,7 @@ int run(const Arguments& args) {
                 stderr,
                 "mono_depth_rescaler stats: disp_in=%llu pose_miss=%llu "
                 "vio_bad=%llu tof_miss=%llu fit_fail=%llu out=%llu "
-                "anchors=%d vio=%d tof=%d\n",
+                "anchors=%d pkt_feat=%d vio=%d tof=%d\n",
                 static_cast<unsigned long long>(
                     stats.disp_in.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(
@@ -260,6 +263,7 @@ int run(const Arguments& args) {
                 static_cast<unsigned long long>(
                     stats.out_written.load(std::memory_order_relaxed)),
                 stats.anchors.load(std::memory_order_relaxed),
+                stats.pkt_feat.load(std::memory_order_relaxed),
                 stats.vio.load(std::memory_order_relaxed),
                 stats.tof.load(std::memory_order_relaxed));
         }
