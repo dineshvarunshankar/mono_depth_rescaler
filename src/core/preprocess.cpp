@@ -87,7 +87,7 @@ cv::Mat Preprocessor::_build_k_model(const std::string& fov) const {
 }
 
 cv::Mat Preprocessor::prepare(const cv::Mat& image) const {
-    cv::Mat src;   // blur into a fresh buffer -- never mutate the caller's image
+    cv::Mat src;   // Blur into a separate buffer.
     if (_antialias && _scale > 1.5)
         cv::GaussianBlur(image, src, cv::Size(0, 0), 0.5 * _scale);
     else
@@ -104,8 +104,7 @@ bool Preprocessor::project(float X, float Y, float Z, float& u, float& v) const 
         v = float(_fy_m * Y / Z + _cy_m);
         return true;
     }
-    // raw: distorted projection into source pixels, then the exact inverse of
-    // the half-pixel-centred resize maps.
+    // Raw projection: source pixels, then inverse half-pixel-centred resize.
     float us, vs;
     if (!_camera.project_distorted(X, Y, Z, us, vs)) return false;
     u = float((us + 0.5) / _xr - 0.5);

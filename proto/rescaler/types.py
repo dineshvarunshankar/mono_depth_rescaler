@@ -25,8 +25,7 @@ class VioPose:
 
     @property
     def valid(self) -> bool:
-        """A real orientation (det ~ 1). qVIO zeroes R when tracking has failed;
-        such a pose cannot place anchors, so callers skip the frame."""
+        """Check for a finite rotation with determinant within 0.02 of 1."""
         return bool(np.isfinite(self.R_imu_to_vio).all()
                     and abs(np.linalg.det(self.R_imu_to_vio) - 1.0) < 0.02)
 

@@ -1,118 +1,105 @@
 # mono_depth_rescaler
 
-Converts relative monocular disparity to metric depth using VIO landmarks and
-ToF points, on VOXL 2 (Starling 2). The Python implementation in `proto/` is the
-reference; `src/` is the C++ deploy build. Both use `config/pipeline.yaml`.
+Convert monocular disparity to metric depth using VIO landmarks and ToF measurements on VOXL 2.
+The C++ service is in `src/`. The Python prototype is in `proto/`.
 
-The rescaler consumes three MPA pipes — relative disparity (from
-`voxl-tflite-server`), VIO (`qvio_extended` or `ov_extended`), and ToF (`tof`) —
-and publishes metric depth on `metric_depth`. It runs no model itself.
+The service reads disparity from `voxl-tflite-server`, VIO from `ov_extended` or `qvio_extended`, and ToF from `tof`.
+It publishes depth on `metric_depth`.
 
-## Requirements
+## 1. Build
 
-- VOXL 2 (QRB5165), e.g. Starling 2, with the ModalAI SDK image
-- The `voxl-cross` build container (see [step 1](#1-cross-compile))
-- Running on the drone: `voxl-tflite-server` (disparity), a VIO server
-  (`voxl-qvio-server` or `voxl-open-vins-server`), and `voxl-camera-server` with ToF enabled
-
-## Deploy on VOXL 2
-
-### 1. Cross-compile
-
-`voxl-docker` is the host wrapper that launches the `voxl-cross` image (cross
-compiler + VOXL SDK). Install both per ModalAI's
-[voxl-docker guide](https://gitlab.com/voxl-public/voxl-docker), then:
+Use the ModalAI SDK and [voxl-cross build environment](https://gitlab.com/voxl-public/voxl-docker) for QRB5165.
+From the repository directory on the host:
 
 ```bash
-voxl-docker -i voxl-cross                    # enter the build container
-./install_build_deps.sh qrb5165 dev          # or qrb5165-2 for 2.x images
-./build.sh qrb5165                           # ./build.sh native for host build + tests
-./make_package.sh                            # build the .deb (qrb5165 build only)
+voxl-docker -i voxl-cross
+./install_build_deps.sh qrb5165 dev
+./build.sh qrb5165
+./make_package.sh
+exit
 ```
 
-### 2. Install on the drone
+For a 2.x system image, use `qrb5165-2` as the dependency platform.
 
-The `.deb` carries the binary, service, and config; its postinst runs
-`daemon-reload` and enables the service.
+## 2. Install
+
+On the host:
 
 ```bash
 adb push mono-depth-rescaler_0.1.0_arm64.deb /tmp/
 adb shell dpkg -i /tmp/mono-depth-rescaler_0.1.0_arm64.deb
-adb shell systemctl start mono_depth_rescaler
-adb shell systemctl status mono_depth_rescaler
 ```
 
-The service runs `/usr/bin/mono_depth_rescaler` with **no profile/fov flags**.
-Choose the VIO backend in `/etc/mono_depth_rescaler/pipeline.yaml`:
+The package installs the binary, configuration, and systemd service.
+
+## 3. Configure
+
+Edit `/etc/mono_depth_rescaler/pipeline.yaml` on the drone:
 
 ```yaml
 deployment:
-  profile: openvins   # or qvio
+  profile: openvins
 ```
 
-Also enable the matching VIO service (`voxl-qvio-server` or `voxl-open-vins-server`).
-`inference.fov` in the same YAML sets crop/stretch.
+Use `qvio` for `voxl-qvio-server`. Enable the VIO service for the selected profile.
+Enable ToF in `voxl-camera-server`.
 
-For a temporary manual override (debug only), stop the service first:
+Configure `voxl-tflite-server` to publish FLOAT32 relative disparity on `tflite_disparity`.
+Use `allow_multiple: false` and `publish_disparity: 1` in the corresponding producer configuration files.
+Match the camera calibration and `fov` between the producer and rescaler.
+See [AI_VOXL2 configuration](https://github.com/dineshvarunshankar/AI_VOXL2#3-configure) for the deployment settings.
+
+The service reads frame dimensions from each disparity packet.
+
+| Output setting | Values |
+|---|---|
+| `size` | `0` preserves model resolution; a smaller `N` pools disparity to `N×N` |
+| `format` | `float32` in metres or `uint16_mm` in millimetres, capped at 65.535 m |
+| `viz` | `1` enables the `metric_depth_viz` colour image |
+
+Defaults use the hires camera, crop undistortion, and a monotonic spline with 10 knots.
+MAD rejection uses `k=3`. Calibration remains available for up to five seconds without a new fit.
+ToF anchors use a four-pixel grid; VIO anchors have no additional grid cap.
+
+Pose-based projection requires an OK VIO state and a pose within the timestamp tolerance.
+With qVIO tracking cameras, native image coordinates and feature depths can supply anchors without a valid pose.
+
+## 4. Run
+
+On the drone, start the camera, disparity producer, and selected VIO service. Then start the rescaler:
+
+```bash
+systemctl start mono_depth_rescaler
+systemctl status mono_depth_rescaler
+```
+
+Inspect each pipe separately:
+
+```bash
+voxl-inspect-cam tflite_disparity
+voxl-inspect-cam metric_depth
+```
+
+For a manual profile override:
 
 ```bash
 systemctl stop mono_depth_rescaler
 mono_depth_rescaler --profile openvins --fov crop
 ```
 
-### 3. Configure the disparity producer
+## Local tests
 
-Run `voxl-tflite-server` with a depth model publishing FLOAT32 disparity — the
-rescaler works with any (MiDaS, ZipDepth, …), it only reads the disparity pipe.
-See [AI_VOXL2](https://github.com/dineshvarunshankar/AI_VOXL2) §4.4 for the
-tflite-server config and patch guide.
-
-Match on both sides: `allow_multiple: false` -> pipe `tflite_disparity` (rescaler
-default), `publish_disparity: 1`, and `fov`. Frame size needs no setting: the
-service takes it from the incoming frame, so swapping models needs no config
-change.
-
-The `output` block controls what is published:
-
-| key | meaning |
-| --- | --- |
-| `size` | `0` keeps the model resolution; `N` max-pools to `N`x`N` |
-| `format` | `float32`, or `uint16_mm` for millimetres capped at 65.535 m |
-| `viz` | `1` publishes `<pipe>_viz`, a JET view over `depth_min`..`depth_max` |
-
-Pooling happens after the fit, on disparity. The fit is monotonic, so this gives
-the same values as min-pooling the full-resolution depth, at a fraction of the
-cost.
-
-### 4. Verify
-
-```bash
-voxl-inspect-cam tflite_disparity
-voxl-inspect-cam metric_depth
-systemctl is-active mono_depth_rescaler
-```
-
-## Selected configuration
-
-- Default YAML profile: `openvins` (`ov_extended`); switch to `qvio` in YAML for `qvio_extended`
-- Default inference camera: `hires`; `tracking_front` / `tracking_down` anchor from `pix_loc` without reprojection
-- ToF anchors: image-space grid (`tof_cell_px=4`, nearest per cell); VIO uncapped
-- Undistort `crop` by default (`stretch` keeps full FOV)
-- Monotonic non-smoothing spline, 10 knots, uniform anchor weights
-- MAD outlier rejection (k=3.0); five-second calibration hold
-- VIO features used only when `v.state == VIO_STATE_OK` (qVIO and OpenVINS)
-
-`config/pipeline.yaml` is shared by Python and C++.
-
-## Tests
+Python prototype:
 
 ```bash
 uv sync
 uv run pytest -q
+```
+
+C++ core, with OpenCV and CMake installed:
+
+```bash
 cmake -S . -B build -DBUILD_VOXL_APP=OFF
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
-
-The local build tests the platform-independent C++ core. The VOXL executable is
-built automatically when the ModalAI SDK provides `modal_pipe`.

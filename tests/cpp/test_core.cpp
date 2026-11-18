@@ -454,12 +454,22 @@ void test_input_size_follows_the_frame() {
 
     Pipeline pipeline(cfg);
     pipeline.set_input_size(100, 100);
-    std::vector<float> big(100 * 100, 0.4f);
+    std::vector<float> big(100 * 100);
+    for (int row = 0; row < 100; ++row) {
+        for (int col = 0; col < 100; ++col) {
+            big[row * 100 + col] = 1.0f / (1.0f + col / 20.0f);
+        }
+    }
     auto a = pipeline.process(1'000'000'000, packet, T, R, nullptr, big);
     assert(a && a->w == 100 && a->h == 100);
 
     pipeline.set_input_size(50, 50);
-    std::vector<float> small(50 * 50, 0.4f);
+    std::vector<float> small(50 * 50);
+    for (int row = 0; row < 50; ++row) {
+        for (int col = 0; col < 50; ++col) {
+            small[row * 50 + col] = big[(2 * row) * 100 + 2 * col];
+        }
+    }
     auto b = pipeline.process(1'100'000'000, packet, T, R, nullptr, small);
     assert(b && b->w == 50 && b->h == 50);
 

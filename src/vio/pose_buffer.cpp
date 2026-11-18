@@ -59,13 +59,30 @@ bool PoseBuffer::lookup(
         if (pkt_out) *pkt_out = *nearest;
 
         const ext_vio_data_t* base = nullptr;
+        const ext_vio_data_t* nearest_valid = nullptr;
+        int64_t valid_gap = INT64_MAX;
         for (const auto& p : _buf) {
+            const int64_t gap = std::abs(p.v.timestamp_ns - t_ns);
+            if (p.v.state != VIO_STATE_OK || gap > feature_tol_ns) continue;
+            if (gap < valid_gap) {
+                nearest_valid = &p;
+                valid_gap = gap;
+            }
             if (p.v.timestamp_ns <= t_ns &&
                 (!base || p.v.timestamp_ns > base->v.timestamp_ns)) {
                 base = &p;
             }
         }
-        if (!base) base = nearest;
+        if (!base) base = nearest_valid;
+        if (!base) {
+            if (!pkt_out) return false;
+            // Feature-only packets have no usable pose.
+            for (int i = 0; i < 3; ++i) {
+                T_out[i] = 0.0f;
+                for (int j = 0; j < 3; ++j) R_out[i][j] = i == j ? 1.0f : 0.0f;
+            }
+            return true;
+        }
 
         t0 = base->v.timestamp_ns;
         std::memcpy(T0, base->v.T_imu_wrt_vio, sizeof(T0));

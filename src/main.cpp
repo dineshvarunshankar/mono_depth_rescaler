@@ -33,7 +33,7 @@ struct Arguments {
     std::string config{"/etc/mono_depth_rescaler/pipeline.yaml"};
     std::string intrinsics{"/etc/mono_depth_rescaler/intrinsics"};
     std::string extrinsics{"/etc/mono_depth_rescaler/extrinsics/starling2.yaml"};
-    // Optional overrides for manual debug only. Service uses YAML alone.
+    // Debug overrides; the service uses YAML.
     std::string profile;
     std::string fov;
 };
@@ -128,7 +128,7 @@ int run(const Arguments& args) {
         stats.disp_in.fetch_add(1, std::memory_order_relaxed);
         pipeline.set_input_size(frame.metadata.width, frame.metadata.height);
         const int64_t image_time = frame.mid_timestamp_ns();
-        ext_vio_data_t vio_pkt;
+        ext_vio_data_t vio_pkt{};
         float image_T[3], image_R[3][3];
         const bool have_pose = pose_buf.get(
             image_time, cfg.anchors.feature_tol_ns, vio_pkt, image_T, image_R);
@@ -148,7 +148,7 @@ int run(const Arguments& args) {
             stats.tof_miss.fetch_add(1, std::memory_order_relaxed);
         }
 
-        // Without VIO: keep the features when they need no pose, else ToF alone.
+        // Without valid VIO, use native qVIO features or ToF alone.
         std::unique_ptr<RescaleResult> result;
         if (vio_ok) {
             result = pipeline.process(
@@ -160,7 +160,7 @@ int run(const Arguments& args) {
             const float R0[3][3] = {
                 {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
             result = pipeline.process(
-                image_time, pipeline.needs_pose() ? no_vio : vio_pkt,
+                image_time, (!have_pose || pipeline.needs_pose()) ? no_vio : vio_pkt,
                 T0, R0, tof.get(), frame.disparity);
         }
         stats.anchors.store(
@@ -201,13 +201,13 @@ int run(const Arguments& args) {
         }
     });
 
-    // Disparity disconnect is soft: auto-reconnect, no restart.
+    // Reconnect disparity without restarting.
     depth_source.set_disconnect_callback([] {
         std::fprintf(
             stderr,
             "mono_depth_rescaler: disparity disconnected; awaiting reconnect\n");
     });
-    // ToF disconnect is soft: keep running on VIO anchors alone.
+    // Use VIO anchors while ToF is disconnected.
     tof_source.set_disconnect_callback([] {
         std::fprintf(
             stderr,
@@ -215,7 +215,7 @@ int run(const Arguments& args) {
     });
 
     MpaVioSource vio(cfg.vio.pipe, CH_VIO);
-    // VIO disconnect is soft: auto-reconnect; held fit covers the gap.
+    // Reconnect VIO and use the held fit during the gap.
     vio.set_disconnect_callback([] {
         std::fprintf(
             stderr,

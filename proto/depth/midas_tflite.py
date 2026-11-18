@@ -7,11 +7,7 @@ from ..rescaler.preprocess import Preprocessor
 
 
 def _check_output_grid(shape: tuple[int, int], pre: Preprocessor) -> None:
-    """The map must land on the grid anchors are projected into.
-
-    Both sides are fixed before the first frame (the model file and
-    inference.input_resolution)
-    """
+    """Check that the model output matches inference.input_resolution."""
     if shape != (pre.dst_h, pre.dst_w):
         raise ValueError(
             f"model outputs {shape}, config expects {(pre.dst_h, pre.dst_w)}; "

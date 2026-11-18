@@ -138,7 +138,7 @@ class Pipeline:
         self._held_t_ns: int = 0
 
     def _sample(self, disparity: np.ndarray, uv: np.ndarray) -> np.ndarray:
-        """uv is already in model pixel coordinates -- the preprocessor put it there."""
+        """Sample disparity at model pixel coordinates."""
         H, W = disparity.shape
         u, v = uv[:, 0], uv[:, 1]
         if not self.cfg.rescale.subpixel_2x2:
@@ -164,9 +164,7 @@ class Pipeline:
         set from RescaleResult.anchors instead of calling this again.
         """
         r = self.cfg.rescale
-        # No usable pose: VIO features cannot be placed, so anchor from ToF
-        # alone. Identity leaves tof_anchors with the fixed extrinsic; the
-        # invalid pose would not cancel (qVIO zeroes R on tracking loss).
+        # Use fixed ToF extrinsics when the VIO pose is invalid.
         pose = frame.pose if frame.pose.valid else VioPose(
             np.eye(3), np.zeros(3))
         native_pose_free = (self._native_cam_id is not None

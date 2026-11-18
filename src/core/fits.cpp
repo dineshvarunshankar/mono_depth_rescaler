@@ -22,8 +22,7 @@ static std::vector<double> polyder(const std::vector<double>& c) {
     return d;
 }
 
-// Real roots of a polynomial (Durand-Kerner). Used only for the monotonic
-// polynomial's derivative critical points; degrees here are tiny.
+// Durand-Kerner real roots for monotonic polynomial derivative critical points.
 static std::vector<double> poly_real_roots(std::vector<double> c) {
     while (c.size() > 1 && c.front() == 0.0) c.erase(c.begin());
     const int deg = static_cast<int>(c.size()) - 1;
@@ -484,8 +483,7 @@ static Fit dispatch(const std::string& method,
     if (method == "monotonic_smoothing_spline")
         return fit_spline(x, y, w, num_knots_spline, 1e5, true, spline_kappa);
     if (method == "smoothing_spline")
-        // P-spline approximation of scipy's FITPACK UnivariateSpline: not
-        // bit-identical, but the deployed monotonic_nonsmoothing_spline is.
+        // P-spline approximation of scipy FITPACK UnivariateSpline; not bit-identical.
         return fit_spline(x, y, w, num_knots_spline, 1e5, false, spline_kappa);
     return {};
 }
@@ -533,11 +531,12 @@ Fit create_robust(const std::string& method,
 
     fit.has_inliers = true;
     fit.inlier_ratio = float(kept) / float(n);
-    if (kept < 2 || kept == n) return fit;   // nothing rejected
+    if (kept < 2) return {};
+    if (kept == n) return fit;   // nothing rejected
 
     Fit refit = create(
         method, xi, yi, wi, degree, num_knots_spline, spline_kappa);
-    if (!refit.valid) return fit;
+    if (!refit.valid) return {};
     refit.has_inliers = true;
     refit.inlier_ratio = float(kept) / float(n);
     return refit;

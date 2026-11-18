@@ -117,7 +117,7 @@ float Pipeline::sample_disparity(const std::vector<float>& disp, float u, float 
         int vi = clampi(int(v), 0, H - 1);
         return disp[vi * W + ui];
     }
-    // closest surface wins: max disparity over the floor/ceil neighbourhood
+    // Maximum disparity over the floor/ceil neighbourhood.
     int uf = clampi(int(std::floor(u)), 0, W - 1);
     int uc = clampi(int(std::ceil(u)),  0, W - 1);
     int vf = clampi(int(std::floor(v)), 0, H - 1);
@@ -141,7 +141,7 @@ ProjectedAnchors Pipeline::build_anchors(
               pkt, T_imu_image_wrt_vio, R_imu_image_to_vio,
               _extr_cam.R, _extr_cam.T,
               *_pre, _cfg.vio.min_quality);
-    // post-gate so it means the same with and without ToF
+    // VIO statistics after depth gating.
     depth_stats(vio.depth, _cfg.rescale.anchor_depth_min,
                 _cfg.rescale.anchor_depth_max, _n_vio, _vio_dmin, _vio_dmax);
     _n_tof = 0;
@@ -253,8 +253,7 @@ std::unique_ptr<RescaleResult> Pipeline::render(
     const bool pool = n > 0;
     const int W = pool ? n : _in_w;
     const int H = pool ? n : _in_h;
-    // the fit is monotonic, so max-pooling disparity here equals min-pooling
-    // depth after the render
+    // Monotonic fit: maximum disparity gives minimum depth.
     std::vector<float> pooled;
     if (pool) {
         pooled = max_pool(disparity, _in_w, _in_h, W, H);
